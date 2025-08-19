@@ -29,7 +29,9 @@ interface HistoryTableProps {
 }
 export function HistoryTable({ history, onDelete }: HistoryTableProps) {
     const { user } = useAuth();
-    const isAdmin = user?.role === '본사 관리자';
+    // 개발 단계에서는 권한 체크 제거
+    // const isAdmin = user?.role === '본사 관리자';
+    const isAdmin = true; // 개발 단계에서는 모든 권한 허용
     const getTypeBadge = (type: StockHistory['type']) => {
         switch (type) {
             case 'in': return <Badge variant="secondary">입고</Badge>;

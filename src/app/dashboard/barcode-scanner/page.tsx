@@ -38,7 +38,9 @@ export default function BarcodeScannerPage() {
   const [isScanning, setIsScanning] = useState(false);
   // 현재 사용자의 지점 정보
   const currentUserBranch = user?.franchise;
-  const isHQManager = user?.role === '본사 관리자';
+  // 개발 단계에서는 권한 체크 제거
+  // const isHQManager = user?.role === '본사 관리자';
+  const isHQManager = true; // 개발 단계에서는 모든 권한 허용
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);

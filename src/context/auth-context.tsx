@@ -9,8 +9,7 @@ import { doc, getDoc, setDoc, getDocs, collection, query, where } from 'firebase
 import { Loader2 } from 'lucide-react';
 
 export interface UserProfile extends User {
-  role?: '본사 관리자' | '가맹점 관리자' | '직원';
-  franchise?: string;
+  role?: '관리자' | '직원';
 }
 
 interface AuthContextType {
@@ -28,65 +27,27 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (!firebaseUser.email) return firebaseUser;
 
     try {
-      // 먼저 userRoles 컬렉션에서 사용자 역할 확인
-      const userRolesQuery = query(
-        collection(db, 'userRoles'),
-        where('email', '==', firebaseUser.email),
-        where('isActive', '==', true)
-      );
-      const userRolesSnapshot = await getDocs(userRolesQuery);
-
-      if (!userRolesSnapshot.empty) {
-        // userRoles에서 찾은 역할 사용
-        const userRoleDoc = userRolesSnapshot.docs[0];
-        const userRoleData = userRoleDoc.data();
-        // 역할 매핑
-        let role: '본사 관리자' | '가맹점 관리자' | '직원';
-        switch (userRoleData.role) {
-          case 'hq_manager':
-            role = '본사 관리자';
-            break;
-          case 'branch_manager':
-            role = '가맹점 관리자';
-            break;
-          case 'branch_user':
-            role = '직원';
-            break;
-          default:
-            role = '직원';
-        }
-
-        return { 
-          ...firebaseUser, 
-          role, 
-          franchise: userRoleData.branchName || '미지정' 
-        } as UserProfile;
-      }
-
-      // userRoles에 없으면 기존 users 컬렉션 사용
+      // users 컬렉션에서 사용자 정보 확인
       const userDocRef = doc(db, 'users', firebaseUser.email);
       let userDoc = await getDoc(userDocRef);
 
       if (!userDoc.exists()) {
-        // 기존 로직: 새 사용자 자동 생성
+        // 새 사용자 자동 생성
         const usersCollectionRef = collection(db, 'users');
         const usersSnapshot = await getDocs(usersCollectionRef);
         const isFirstUser = usersSnapshot.empty;
 
         const newUserProfile = {
           email: firebaseUser.email,
-          role: isFirstUser ? '본사 관리자' : '직원',
-          franchise: isFirstUser ? '본사' : '미지정',
+          role: isFirstUser ? '관리자' : '직원',
         };
 
         await setDoc(userDocRef, newUserProfile);
         userDoc = await getDoc(userDocRef);
-      } else {
-        // 이미 관리자가 미리 등록한 사용자 정보가 있는 경우
       }
 
       const userData = userDoc.data();
-      return { ...firebaseUser, role: userData?.role, franchise: userData?.franchise } as UserProfile;
+      return { ...firebaseUser, role: userData?.role } as UserProfile;
     } catch (error) {
       console.error("Error fetching or creating user role:", error);
     }

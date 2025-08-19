@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/page-header";
-import { Package, Truck, CheckCircle, Clock, MapPin, Phone, Calendar as CalendarIcon, Download, DollarSign } from "lucide-react";
+import { Package, Truck, CheckCircle, Clock, MapPin, Phone, Calendar as CalendarIcon, Download, DollarSign, Settings } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -29,11 +29,10 @@ import { cn } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 export default function PickupDeliveryPage() {
   const { orders, loading, updateOrderStatus, updateOrder } = useOrders();
-  const { branches, loading: branchesLoading, updateBranch } = useBranches();
+  const { branches, loading: branchesLoading, updateBranch, addBranch, setupSampleDeliveryFees } = useBranches();
   const { user } = useAuth();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState("all");
   const [activeTab, setActiveTab] = useState("pickup");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -64,8 +63,9 @@ export default function PickupDeliveryPage() {
     largeItem: 0,
     express: 0
   });
-  // 사용자 권한에 따른 지점 필터링
-  const isAdmin = user?.role === '본사 관리자';
+  // 개발 단계에서는 권한 체크 제거
+  // const isAdmin = user?.role === '본사 관리자';
+  const isAdmin = true; // 개발 단계에서는 모든 권한 허용
   const userBranch = user?.franchise;
   // 사용자가 볼 수 있는 지점 목록
   const availableBranches = useMemo(() => {
@@ -75,12 +75,6 @@ export default function PickupDeliveryPage() {
       return branches.filter(branch => branch.name === userBranch); // 직원은 소속 지점만
     }
   }, [branches, isAdmin, userBranch]);
-  // 직원의 경우 자동으로 소속 지점으로 필터링
-  useEffect(() => {
-    if (!isAdmin && userBranch && selectedBranch === "all") {
-      setSelectedBranch(userBranch);
-    }
-  }, [isAdmin, userBranch, selectedBranch]);
   // 픽업 주문 필터링 (예약 주문만)
   const pickupOrders = useMemo(() => {
     let filteredOrders = orders.filter(order => 
@@ -90,8 +84,6 @@ export default function PickupDeliveryPage() {
     // 권한에 따른 지점 필터링
     if (!isAdmin && userBranch) {
       filteredOrders = filteredOrders.filter(order => order.branchName === userBranch);
-    } else if (selectedBranch !== 'all') {
-      filteredOrders = filteredOrders.filter(order => order.branchName === selectedBranch);
     }
     // 검색어 필터링
     if (searchTerm) {
@@ -110,7 +102,7 @@ export default function PickupDeliveryPage() {
       const bDate = b.pickupInfo?.date || '';
       return aDate.localeCompare(bDate);
     });
-  }, [orders, selectedBranch, searchTerm, isAdmin, userBranch]);
+  }, [orders, searchTerm, isAdmin, userBranch]);
   // 배송 주문 필터링 (예약 주문만)
   const deliveryOrders = useMemo(() => {
     let filteredOrders = orders.filter(order => 
@@ -120,8 +112,6 @@ export default function PickupDeliveryPage() {
     // 권한에 따른 지점 필터링
     if (!isAdmin && userBranch) {
       filteredOrders = filteredOrders.filter(order => order.branchName === userBranch);
-    } else if (selectedBranch !== 'all') {
-      filteredOrders = filteredOrders.filter(order => order.branchName === selectedBranch);
     }
     // 검색어 필터링
     if (searchTerm) {
@@ -140,7 +130,7 @@ export default function PickupDeliveryPage() {
       const bDate = b.deliveryInfo?.date || '';
       return aDate.localeCompare(bDate);
     });
-  }, [orders, selectedBranch, searchTerm, isAdmin, userBranch]);
+  }, [orders, searchTerm, isAdmin, userBranch]);
   // 배송 주문 필터링 (배송비 관리용 - 완료 전 주문도 포함)
   const completedDeliveryOrders = useMemo(() => {
     let filteredOrders = orders.filter(order => 
@@ -150,8 +140,6 @@ export default function PickupDeliveryPage() {
     // 권한에 따른 지점 필터링
     if (!isAdmin && userBranch) {
       filteredOrders = filteredOrders.filter(order => order.branchName === userBranch);
-    } else if (selectedBranch !== 'all') {
-      filteredOrders = filteredOrders.filter(order => order.branchName === selectedBranch);
     }
     return filteredOrders.sort((a, b) => {
       // 최근 완료된 주문을 먼저 표시
@@ -159,7 +147,7 @@ export default function PickupDeliveryPage() {
       const bDate = b.orderDate?.toDate?.() || new Date(b.orderDate as any);
       return bDate.getTime() - aDate.getTime();
     });
-  }, [orders, selectedBranch, isAdmin, userBranch]);
+  }, [orders, isAdmin, userBranch]);
   // 배송비 분석 데이터 계산
   const deliveryCostAnalytics = useMemo(() => {
     const ordersWithCost = completedDeliveryOrders.filter(order => 
@@ -267,34 +255,75 @@ export default function PickupDeliveryPage() {
   }, [completedDeliveryOrders]);
   // 배송비 설정 관련 함수들
   const handleOpenDeliveryFeeSettings = (branchName: string) => {
-    const branch = branches.find(b => b.name === branchName);
+    console.log('배송비 설정 다이얼로그 열기 시도:', branchName);
+    console.log('현재 지점 목록:', branches);
+    
+    // 지점이 없어도 다이얼로그를 열 수 있도록 수정
+    setSelectedBranchForSettings(branchName);
+    
+    // 기존 지점 데이터가 있으면 사용, 없으면 빈 배열로 시작
+    const branch = branches.find(b => b.name === branchName) || branches[0];
+    console.log('선택된 지점:', branch);
+    
     if (branch) {
-      setSelectedBranchForSettings(branchName);
       setEditingDeliveryFees(branch.deliveryFees || []);
       setSurcharges({
         mediumItem: branch.surcharges?.mediumItem || 0,
         largeItem: branch.surcharges?.largeItem || 0,
         express: branch.surcharges?.express || 0
       });
-      setIsDeliveryFeeSettingsOpen(true);
+    } else {
+      // 지점이 없으면 기본값으로 설정
+      setEditingDeliveryFees([]);
+      setSurcharges({
+        mediumItem: 0,
+        largeItem: 0,
+        express: 0
+      });
     }
+    
+    console.log('다이얼로그 상태 설정:', true);
+    setIsDeliveryFeeSettingsOpen(true);
   };
   const handleSaveDeliveryFeeSettings = async () => {
     try {
-      const branch = branches.find(b => b.name === selectedBranchForSettings);
-      if (!branch) return;
-      const updatedBranch = {
-        ...branch,
-        deliveryFees: editingDeliveryFees,
-        surcharges
-      };
-      await updateBranch(branch.id, updatedBranch);
-      toast({
-        title: '성공',
-        description: '배송비 설정이 저장되었습니다.',
-      });
+      let branch = branches.find(b => b.name === selectedBranchForSettings) || branches[0];
+      
+      // 지점이 없으면 새로 생성
+      if (!branch) {
+        const newBranch = {
+          name: '메인 매장',
+          address: '',
+          contact: '',
+          manager: '',
+          isActive: true,
+          deliveryFees: editingDeliveryFees,
+          surcharges
+        };
+        
+        // 새 지점 추가
+        await addBranch(newBranch);
+        toast({
+          title: '성공',
+          description: '새 지점이 생성되고 배송비 설정이 저장되었습니다.',
+        });
+      } else {
+        // 기존 지점 업데이트
+        const updatedBranch = {
+          ...branch,
+          deliveryFees: editingDeliveryFees,
+          surcharges
+        };
+        await updateBranch(branch.id, updatedBranch);
+        toast({
+          title: '성공',
+          description: '배송비 설정이 저장되었습니다.',
+        });
+      }
+      
       setIsDeliveryFeeSettingsOpen(false);
     } catch (error) {
+      console.error('배송비 설정 저장 오류:', error);
       toast({
         variant: 'destructive',
         title: '오류',
@@ -517,21 +546,6 @@ export default function PickupDeliveryPage() {
                 className="max-w-sm"
               />
             </div>
-            {isAdmin && (
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="지점 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">모든 지점</SelectItem>
-                  {availableBranches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.name}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
             <Button
               variant="outline"
               onClick={() => setIsExportDialogOpen(true)}
@@ -604,6 +618,10 @@ export default function PickupDeliveryPage() {
            <TabsTrigger value="delivery-costs" className="flex items-center gap-2">
              <DollarSign className="w-4 h-4" />
              배송비 관리
+           </TabsTrigger>
+           <TabsTrigger value="delivery-fee-settings" className="flex items-center gap-2">
+             <Settings className="w-4 h-4" />
+             배송비 설정
            </TabsTrigger>
          </TabsList>
         {/* 픽업 관리 탭 */}
@@ -1090,42 +1108,111 @@ export default function PickupDeliveryPage() {
                      </Card>
                    </div>
                  </div>
-                 {/* 배송비 설정 섹션 */}
+
+               </div>
+             </CardContent>
+           </Card>
+         </TabsContent>
+         {/* 배송비 설정 탭 */}
+         <TabsContent value="delivery-fee-settings">
+           <Card>
+             <CardHeader>
+               <CardTitle className="flex items-center gap-2">
+                 <Settings className="w-5 h-5" />
+                 배송비 설정
+               </CardTitle>
+               <CardDescription>
+                 지점별 지역 배송비와 추가 요금을 설정합니다. 설정한 배송비는 주문접수에서 자동으로 적용됩니다.
+               </CardDescription>
+             </CardHeader>
+             <CardContent>
+               <div className="space-y-6">
+                 {/* 샘플 데이터 설정 */}
+                 <div>
+                   <div className="flex justify-between items-center mb-4">
+                     <h3 className="text-lg font-semibold">빠른 설정</h3>
+                     <Button 
+                       variant="outline" 
+                       size="sm"
+                       onClick={() => {
+                         if (availableBranches.length > 0) {
+                           setupSampleDeliveryFees(availableBranches[0].id);
+                         }
+                       }}
+                     >
+                       서울시 샘플 데이터 설정
+                     </Button>
+                   </div>
+                   <div className="bg-blue-50 p-4 rounded-lg">
+                     <p className="text-sm text-blue-800">
+                       <strong>서울시 지역별 배송비:</strong> 영등포구(10,000원), 마포구(13,000원), 강남구(20,000원) 등 25개 지역
+                     </p>
+                     <p className="text-sm text-blue-700 mt-1">
+                       추가요금: 중간품목(+2,000원), 대형품목(+5,000원), 긴급배송(+10,000원)
+                     </p>
+                   </div>
+                 </div>
+                 {/* 배송비 설정 */}
                  <div>
                    <h3 className="text-lg font-semibold mb-4">배송비 설정</h3>
-                   <div className="space-y-4">
-                     <div className="grid gap-4 md:grid-cols-2">
-                       {availableBranches.map(branch => (
-                         <Card key={branch.name}>
-                           <CardHeader className="pb-2">
-                             <CardTitle className="text-sm font-medium">{branch.name}</CardTitle>
-                           </CardHeader>
-                           <CardContent>
-                             <div className="space-y-2">
-                               <div className="flex justify-between text-sm">
-                                 <span>지역별 배송비:</span>
-                                 <span>{branch.deliveryFees?.length || 0}개 지역</span>
-                               </div>
-                               <div className="flex justify-between text-sm">
-                                 <span>추가 요금:</span>
-                                 <span>
-                                   {branch.surcharges?.mediumItem ? `중간품목 +₩${branch.surcharges.mediumItem.toLocaleString()}` : '없음'}
-                                   {branch.surcharges?.largeItem ? `, 대형품목 +₩${branch.surcharges.largeItem.toLocaleString()}` : ''}
-                                   {branch.surcharges?.express ? `, 긴급 +₩${branch.surcharges.express.toLocaleString()}` : ''}
-                                 </span>
-                               </div>
-                               <Button 
-                                 variant="outline" 
-                                 size="sm" 
-                                 className="w-full mt-2"
-                                 onClick={() => handleOpenDeliveryFeeSettings(branch.name)}
-                               >
-                                 배송비 설정
-                               </Button>
-                             </div>
-                           </CardContent>
-                         </Card>
-                       ))}
+                   <div className="grid gap-4 md:grid-cols-2">
+                     <Card>
+                       <CardHeader className="pb-2">
+                         <CardTitle className="text-sm font-medium">현재 배송비 설정</CardTitle>
+                       </CardHeader>
+                       <CardContent>
+                         <div className="space-y-2">
+                           <div className="flex justify-between text-sm">
+                             <span>지역별 배송비:</span>
+                             <span className="font-medium">설정 필요</span>
+                           </div>
+                           <div className="flex justify-between text-sm">
+                             <span>추가 요금:</span>
+                             <span className="text-xs">설정 필요</span>
+                           </div>
+                           <div className="flex gap-2 mt-3">
+                             <Button 
+                               variant="outline" 
+                               size="sm" 
+                               className="flex-1"
+                               onClick={() => handleOpenDeliveryFeeSettings('메인 매장')}
+                             >
+                               배송비 설정
+                             </Button>
+                             <Button 
+                               variant="outline" 
+                               size="sm" 
+                               className="flex-1"
+                               onClick={() => {
+                                 // 메인 매장에 샘플 데이터 설정
+                                 if (availableBranches.length > 0) {
+                                   setupSampleDeliveryFees(availableBranches[0].id);
+                                 }
+                               }}
+                             >
+                               샘플 설정
+                             </Button>
+                           </div>
+                         </div>
+                       </CardContent>
+                     </Card>
+                   </div>
+                 </div>
+                 {/* 사용법 안내 */}
+                 <div>
+                   <h3 className="text-lg font-semibold mb-4">사용법 안내</h3>
+                   <div className="bg-gray-50 p-4 rounded-lg space-y-2">
+                     <div className="flex items-start gap-2">
+                       <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+                       <p className="text-sm">배송비 설정 후 주문접수에서 배송 주소 입력 시 자동으로 배송비가 계산됩니다.</p>
+                     </div>
+                     <div className="flex items-start gap-2">
+                       <div className="w-2 h-2 bg-green-500 rounded-full mt-2 flex-shrink-0"></div>
+                       <p className="text-sm">지역별 배송비는 주소에서 자동으로 지역을 추출하여 적용됩니다.</p>
+                     </div>
+                     <div className="flex items-start gap-2">
+                       <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
+                       <p className="text-sm">추가 요금은 상품 크기나 배송 옵션에 따라 자동으로 추가됩니다.</p>
                      </div>
                    </div>
                  </div>
@@ -1385,103 +1472,268 @@ export default function PickupDeliveryPage() {
        <Dialog open={isDeliveryFeeSettingsOpen} onOpenChange={setIsDeliveryFeeSettingsOpen}>
          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
            <DialogHeader>
-             <DialogTitle>{selectedBranchForSettings} 배송비 설정</DialogTitle>
+             <DialogTitle>배송비 설정</DialogTitle>
              <DialogDescription>
-               지점별 지역 배송비와 추가 요금을 설정할 수 있습니다. 설정한 배송비는 해당 지점의 배송 주문에 적용됩니다.
+               지역별 배송비와 추가 요금을 설정할 수 있습니다. 설정한 배송비는 배송 주문에 자동으로 적용됩니다.
              </DialogDescription>
            </DialogHeader>
            <div className="space-y-6">
              {/* 지역별 배송비 설정 */}
              <div>
-               <h4 className="text-lg font-semibold mb-4">지역별 배송비</h4>
-               <div className="space-y-4">
-                 <div className="grid grid-cols-3 gap-4">
-                   <div>
-                     <Label htmlFor="new-district">지역명</Label>
-                     <Input
-                       id="new-district"
-                       value={newDistrict}
-                       onChange={(e) => setNewDistrict(e.target.value)}
-                       placeholder="예: 강남구"
-                     />
-                   </div>
-                   <div>
-                     <Label htmlFor="new-fee">배송비</Label>
-                     <Input
-                       id="new-fee"
-                       type="number"
-                       value={newFee}
-                       onChange={(e) => setNewFee(e.target.value)}
-                       placeholder="예: 15000"
-                     />
-                   </div>
-                   <div className="flex items-end">
-                     <Button onClick={addDeliveryFee} className="w-full">
-                       추가
+               <div className="flex justify-between items-center mb-4">
+                 <h4 className="text-lg font-semibold">지역별 배송비</h4>
+                 <Button 
+                   variant="outline" 
+                   size="sm"
+                   onClick={() => {
+                     const sampleFees = [
+                       { district: "영등포구", fee: 10000 },
+                       { district: "마포구", fee: 13000 },
+                       { district: "양천구", fee: 13000 },
+                       { district: "동작구", fee: 13000 },
+                       { district: "관악구", fee: 13000 },
+                       { district: "구로구", fee: 13000 },
+                       { district: "금천구", fee: 13000 },
+                       { district: "용산구", fee: 14000 },
+                       { district: "강서구", fee: 14000 },
+                       { district: "서대문구", fee: 15000 },
+                       { district: "종로구", fee: 16000 },
+                       { district: "중구", fee: 16000 },
+                       { district: "동대문구", fee: 18000 },
+                       { district: "서초구", fee: 18000 },
+                       { district: "성동구", fee: 18000 },
+                       { district: "강남구", fee: 20000 },
+                       { district: "은평구", fee: 20000 },
+                       { district: "성북구", fee: 20000 },
+                       { district: "광진구", fee: 20000 },
+                       { district: "송파구", fee: 23000 },
+                       { district: "강북구", fee: 23000 },
+                       { district: "중랑구", fee: 23000 },
+                       { district: "도봉구", fee: 25000 },
+                       { district: "강동구", fee: 25000 },
+                       { district: "노원구", fee: 25000 },
+                       { district: "기타", fee: 30000 },
+                       { district: "무료", fee: 0 }
+                     ];
+                     setEditingDeliveryFees(sampleFees);
+                   }}
+                 >
+                   서울시 전체 설정
+                 </Button>
+               </div>
+               
+               {/* 빠른 배송비 설정 */}
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                 <Button 
+                   variant="outline" 
+                   size="sm"
+                   onClick={() => {
+                     const newFees = [...editingDeliveryFees];
+                     const existingIndex = newFees.findIndex(f => f.district === "강남구");
+                     if (existingIndex >= 0) {
+                       newFees[existingIndex].fee = 20000;
+                     } else {
+                       newFees.push({ district: "강남구", fee: 20000 });
+                     }
+                     setEditingDeliveryFees(newFees);
+                   }}
+                 >
+                   강남구: ₩20,000
+                 </Button>
+                 <Button 
+                   variant="outline" 
+                   size="sm"
+                   onClick={() => {
+                     const newFees = [...editingDeliveryFees];
+                     const existingIndex = newFees.findIndex(f => f.district === "서초구");
+                     if (existingIndex >= 0) {
+                       newFees[existingIndex].fee = 18000;
+                     } else {
+                       newFees.push({ district: "서초구", fee: 18000 });
+                     }
+                     setEditingDeliveryFees(newFees);
+                   }}
+                 >
+                   서초구: ₩18,000
+                 </Button>
+                 <Button 
+                   variant="outline" 
+                   size="sm"
+                   onClick={() => {
+                     const newFees = [...editingDeliveryFees];
+                     const existingIndex = newFees.findIndex(f => f.district === "마포구");
+                     if (existingIndex >= 0) {
+                       newFees[existingIndex].fee = 13000;
+                     } else {
+                       newFees.push({ district: "마포구", fee: 13000 });
+                     }
+                     setEditingDeliveryFees(newFees);
+                   }}
+                 >
+                   마포구: ₩13,000
+                 </Button>
+                 <Button 
+                   variant="outline" 
+                   size="sm"
+                   onClick={() => {
+                     const newFees = [...editingDeliveryFees];
+                     const existingIndex = newFees.findIndex(f => f.district === "영등포구");
+                     if (existingIndex >= 0) {
+                       newFees[existingIndex].fee = 10000;
+                     } else {
+                       newFees.push({ district: "영등포구", fee: 10000 });
+                     }
+                     setEditingDeliveryFees(newFees);
+                   }}
+                 >
+                   영등포구: ₩10,000
+                 </Button>
+               </div>
+
+               {/* 배송비 목록 */}
+               <div className="space-y-2 max-h-60 overflow-y-auto">
+                 {editingDeliveryFees.map((item, index) => (
+                   <div key={index} className="flex items-center gap-3 p-3 bg-muted rounded-lg">
+                     <div className="flex-1 flex items-center gap-3">
+                       <Input
+                         value={item.district}
+                         onChange={(e) => {
+                           const newFees = [...editingDeliveryFees];
+                           newFees[index].district = e.target.value;
+                           setEditingDeliveryFees(newFees);
+                         }}
+                         className="w-24"
+                         placeholder="지역명"
+                       />
+                       <span className="text-muted-foreground">₩</span>
+                       <Input
+                         type="number"
+                         value={item.fee}
+                         onChange={(e) => {
+                           const newFees = [...editingDeliveryFees];
+                           newFees[index].fee = parseInt(e.target.value) || 0;
+                           setEditingDeliveryFees(newFees);
+                         }}
+                         className="w-20"
+                         placeholder="0"
+                       />
+                     </div>
+                     <Button
+                       variant="outline"
+                       size="sm"
+                       onClick={() => removeDeliveryFee(index)}
+                     >
+                       삭제
                      </Button>
                    </div>
-                 </div>
-                 <div className="space-y-2">
-                   {editingDeliveryFees.map((item, index) => (
-                     <div key={index} className="flex items-center justify-between p-3 bg-muted rounded-lg">
-                       <div className="flex-1">
-                         <span className="font-medium">{item.district}</span>
-                         <span className="ml-4 text-muted-foreground">₩{item.fee.toLocaleString()}</span>
-                       </div>
-                       <Button
-                         variant="outline"
-                         size="sm"
-                         onClick={() => removeDeliveryFee(index)}
-                       >
-                         삭제
-                       </Button>
-                     </div>
-                   ))}
-                 </div>
+                 ))}
+               </div>
+
+               {/* 새 지역 추가 */}
+               <div className="flex gap-2 mt-4">
+                 <Input
+                   value={newDistrict}
+                   onChange={(e) => setNewDistrict(e.target.value)}
+                   placeholder="새 지역명 (예: 강남구)"
+                   className="flex-1"
+                 />
+                 <Input
+                   type="number"
+                   value={newFee}
+                   onChange={(e) => setNewFee(e.target.value)}
+                   placeholder="배송비"
+                   className="w-24"
+                 />
+                 <Button 
+                   onClick={() => {
+                     console.log('추가 버튼 클릭됨');
+                     console.log('newDistrict:', newDistrict);
+                     console.log('newFee:', newFee);
+                     addDeliveryFee();
+                   }}
+                 >
+                   추가
+                 </Button>
                </div>
              </div>
              {/* 추가 요금 설정 */}
              <div>
                <h4 className="text-lg font-semibold mb-4">추가 요금 설정</h4>
+               
+               {/* 빠른 추가요금 설정 */}
+               <div className="grid grid-cols-3 gap-3 mb-4">
+                 <Button 
+                   variant="outline" 
+                   size="sm"
+                   onClick={() => setSurcharges(prev => ({ ...prev, mediumItem: 2000 }))}
+                 >
+                   중간품목: ₩2,000
+                 </Button>
+                 <Button 
+                   variant="outline" 
+                   size="sm"
+                   onClick={() => setSurcharges(prev => ({ ...prev, largeItem: 5000 }))}
+                 >
+                   대형품목: ₩5,000
+                 </Button>
+                 <Button 
+                   variant="outline" 
+                   size="sm"
+                   onClick={() => setSurcharges(prev => ({ ...prev, express: 10000 }))}
+                 >
+                   긴급배송: ₩10,000
+                 </Button>
+               </div>
+
+               {/* 추가요금 입력 */}
                <div className="grid grid-cols-3 gap-4">
                  <div>
                    <Label htmlFor="medium-item">중간품목 추가요금</Label>
-                   <Input
-                     id="medium-item"
-                     type="number"
-                     value={surcharges.mediumItem}
-                     onChange={(e) => setSurcharges(prev => ({
-                       ...prev,
-                       mediumItem: parseInt(e.target.value) || 0
-                     }))}
-                     placeholder="0"
-                   />
+                   <div className="flex items-center gap-2">
+                     <Input
+                       id="medium-item"
+                       type="number"
+                       value={surcharges.mediumItem}
+                       onChange={(e) => setSurcharges(prev => ({
+                         ...prev,
+                         mediumItem: parseInt(e.target.value) || 0
+                       }))}
+                       placeholder="0"
+                     />
+                     <span className="text-sm text-muted-foreground">원</span>
+                   </div>
                  </div>
                  <div>
                    <Label htmlFor="large-item">대형품목 추가요금</Label>
-                   <Input
-                     id="large-item"
-                     type="number"
-                     value={surcharges.largeItem}
-                     onChange={(e) => setSurcharges(prev => ({
-                       ...prev,
-                       largeItem: parseInt(e.target.value) || 0
-                     }))}
-                     placeholder="0"
-                   />
+                   <div className="flex items-center gap-2">
+                     <Input
+                       id="large-item"
+                       type="number"
+                       value={surcharges.largeItem}
+                       onChange={(e) => setSurcharges(prev => ({
+                         ...prev,
+                         largeItem: parseInt(e.target.value) || 0
+                       }))}
+                       placeholder="0"
+                     />
+                     <span className="text-sm text-muted-foreground">원</span>
+                   </div>
                  </div>
                  <div>
                    <Label htmlFor="express">긴급배송 추가요금</Label>
-                   <Input
-                     id="express"
-                     type="number"
-                     value={surcharges.express}
-                     onChange={(e) => setSurcharges(prev => ({
-                       ...prev,
-                       express: parseInt(e.target.value) || 0
-                     }))}
-                     placeholder="0"
-                   />
+                   <div className="flex items-center gap-2">
+                     <Input
+                       id="express"
+                       type="number"
+                       value={surcharges.express}
+                       onChange={(e) => setSurcharges(prev => ({
+                         ...prev,
+                         express: parseInt(e.target.value) || 0
+                       }))}
+                       placeholder="0"
+                     />
+                     <span className="text-sm text-muted-foreground">원</span>
+                   </div>
                  </div>
                </div>
              </div>

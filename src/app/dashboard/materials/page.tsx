@@ -12,7 +12,7 @@ import { MultiPrintOptionsDialog } from "@/components/multi-print-options-dialog
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useBranches } from "@/hooks/use-branches";
+
 import { useMaterials } from "@/hooks/use-materials";
 import { Skeleton } from "@/components/ui/skeleton";
 import { downloadXLSX } from "@/lib/utils";
@@ -26,35 +26,16 @@ export default function MaterialsPage() {
   const [isMultiPrintDialogOpen, setIsMultiPrintDialogOpen] = useState(false);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState("all");
+
   const [selectedMainCategory, setSelectedMainCategory] = useState("all");
   const [selectedMidCategory, setSelectedMidCategory] = useState("all");
 
   const { toast } = useToast();
   const router = useRouter();
   const { user } = useAuth();
-  const { branches } = useBranches();
   const { materials, loading: materialsLoading, addMaterial, updateMaterial, deleteMaterial, bulkAddMaterials, fetchMaterials, updateMaterialIds } = useMaterials();
 
-  const isHeadOfficeAdmin = user?.role === '본사 관리자';
-  const isAdmin = user?.role === '본사 관리자';
-  const userBranch = user?.franchise;
 
-  // 사용자가 볼 수 있는 지점 목록
-  const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 본사 관리자는 모든 지점을 볼 수 있음
-    } else {
-      return branches.filter(branch => branch.name === userBranch); // 지점 직원은 자신의 지점만
-    }
-  }, [branches, isAdmin, userBranch]);
-
-  // 자동 지점 필터링 (지점 직원은 자동으로 자신의 지점으로 설정)
-  useEffect(() => {
-    if (!isAdmin && userBranch && selectedBranch === "all") {
-      setSelectedBranch(userBranch);
-    }
-  }, [isAdmin, userBranch, selectedBranch]);
 
   const mainCategories = useMemo(() => [...new Set(materials.map(m => m.mainCategory))], [materials]);
   const midCategories = useMemo(() => {
@@ -89,7 +70,7 @@ export default function MaterialsPage() {
     }
 
     return filtered;
-  }, [materials, searchTerm, selectedBranch, selectedMainCategory, selectedMidCategory, isAdmin, userBranch, user]);
+  }, [materials, searchTerm, selectedMainCategory, selectedMidCategory]);
 
   const handleAdd = () => {
     setSelectedMaterial(null);
@@ -157,7 +138,7 @@ export default function MaterialsPage() {
     <div className="space-y-6">
       <PageHeader
         title="자재 관리"
-        description={!isAdmin ? `${userBranch} 지점의 자재 정보를 관리합니다.` : "자재 정보를 관리하고 재고를 추적하세요."}
+        description="자재 정보를 관리하고 재고를 추적하세요."
       >
         <div className="flex gap-2">
           <Button 
@@ -167,21 +148,17 @@ export default function MaterialsPage() {
             <ScanLine className="mr-2 h-4 w-4" />
             바코드 스캔
           </Button>
-          {isHeadOfficeAdmin && (
-            <>
-              <Button onClick={handleAdd}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                자재 추가
-              </Button>
-              <Button 
-                variant="outline"
-                onClick={updateMaterialIds}
-                disabled={materialsLoading}
-              >
-                ID 업데이트
-              </Button>
-            </>
-          )}
+          <Button onClick={handleAdd}>
+            <PlusCircle className="mr-2 h-4 w-4" />
+            자재 추가
+          </Button>
+          <Button 
+            variant="outline"
+            onClick={updateMaterialIds}
+            disabled={materialsLoading}
+          >
+            ID 업데이트
+          </Button>
         </div>
       </PageHeader>
 
@@ -202,21 +179,7 @@ export default function MaterialsPage() {
                 className="w-full"
               />
             </div>
-            {isAdmin && (
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger className="w-full sm:w-[200px] text-foreground">
-                  <SelectValue placeholder="지점 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">모든 지점</SelectItem>
-                  {availableBranches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.name}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+
             <Select value={selectedMainCategory} onValueChange={setSelectedMainCategory}>
               <SelectTrigger className="w-full sm:w-[200px]">
                 <SelectValue placeholder="대분류" />
@@ -254,36 +217,32 @@ export default function MaterialsPage() {
               <Download className="mr-2 h-4 w-4" />
               현재 목록 다운로드
             </Button>
-            {isHeadOfficeAdmin && (
-              <>
-                <ImportButton
-                  onImport={handleImport}
-                  templateData={[
-                    {
-                      id: "MAT001",
-                      name: "예시 자재",
-                      mainCategory: "대분류",
-                      midCategory: "중분류",
-                      price: 10000,
-                      supplier: "공급업체",
-                      size: "크기",
-                      color: "색상",
-                      stock: 100
-                    }
-                  ]}
-                  fileName="materials_template"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsMultiPrintDialogOpen(true)}
-                  disabled={selectedMaterials.length === 0}
-                >
-                  <Printer className="mr-2 h-4 w-4" />
-                  선택 항목 라벨 출력
-                </Button>
-              </>
-            )}
+            <ImportButton
+              onImport={handleImport}
+              templateData={[
+                {
+                  id: "MAT001",
+                  name: "예시 자재",
+                  mainCategory: "대분류",
+                  midCategory: "중분류",
+                  price: 10000,
+                  supplier: "공급업체",
+                  size: "크기",
+                  color: "색상",
+                  stock: 100
+                }
+              ]}
+              fileName="materials_template"
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsMultiPrintDialogOpen(true)}
+              disabled={selectedMaterials.length === 0}
+            >
+              <Printer className="mr-2 h-4 w-4" />
+              선택 항목 라벨 출력
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -313,8 +272,6 @@ export default function MaterialsPage() {
         onOpenChange={setIsFormOpen}
         onSubmit={handleFormSubmit}
         material={selectedMaterial}
-        branches={availableBranches}
-        selectedBranch={!isAdmin ? userBranch : selectedBranch}
       />
 
       <MultiPrintOptionsDialog

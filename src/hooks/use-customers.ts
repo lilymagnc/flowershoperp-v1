@@ -14,16 +14,6 @@ export interface Customer extends CustomerFormValues {
   points?: number;
   address?: string;
   companyName?: string;
-  // 지점별 정보 (새로 추가)
-  branches?: {
-    [branchId: string]: {
-      registeredAt: string | any;
-      grade?: string;
-      notes?: string;
-    }
-  };
-  // 주 거래 지점 (가장 많이 주문한 지점)
-  primaryBranch?: string;
 }
 export function useCustomers() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -263,7 +253,7 @@ export function useCustomers() {
       setLoading(false);
     }
   };
-  const bulkAddCustomers = async (data: any[], selectedBranch?: string) => {
+  const bulkAddCustomers = async (data: any[]) => {
     setLoading(true);
     let newCount = 0;
     let duplicateCount = 0;
@@ -277,42 +267,22 @@ export function useCustomers() {
           companyName: String(row.companyName || ''),
           address: String(row.address || ''),
           email: String(row.email || ''),
-          branch: selectedBranch || '',
           totalSpent: 0,
           orderCount: 0,
           points: 0,
         };
-        // 중복 체크: 연락처 기준으로만 체크 (전 지점 공유)
+        // 중복 체크: 연락처 기준으로 체크
         const contactQuery = query(collection(db, "customers"), where("contact", "==", customerData.contact));
         const contactSnapshot = await getDocs(contactQuery);
         const existingCustomers = contactSnapshot.docs.filter(doc => !doc.data().isDeleted);
         if (existingCustomers.length > 0) {
-          // 기존 고객이면 현재 지점에 등록
-          const existingCustomer = existingCustomers[0];
-          const gradeFromRow = String((row as any).grade ?? '신규');
-          const notesFromRow = String((row as any).notes ?? '');
-          await updateDoc(doc(db, 'customers', existingCustomer.id), {
-            [`branches.${selectedBranch}`]: {
-              registeredAt: serverTimestamp(),
-              grade: gradeFromRow,
-              notes: notesFromRow
-            }
-          });
           duplicateCount++;
         } else {
           // 새 고객 생성
-                   const newCustomerData = {
-           ...customerData,
-           createdAt: serverTimestamp(),
-           branches: {
-             [selectedBranch || '']: {
-               registeredAt: serverTimestamp(),
-               grade: '신규',
-               notes: `엑셀 업로드로 등록 - ${new Date().toLocaleDateString()}`
-             }
-           },
-           primaryBranch: selectedBranch
-         };
+          const newCustomerData = {
+            ...customerData,
+            createdAt: serverTimestamp(),
+          };
           await addDoc(collection(db, "customers"), newCustomerData);
           newCount++;
         }
@@ -331,7 +301,7 @@ export function useCustomers() {
     }
     toast({ 
       title: '처리 완료', 
-      description: `성공: 신규 고객 ${newCount}명 추가, 기존 고객 ${duplicateCount}명 현재 지점 등록.`
+      description: `성공: 신규 고객 ${newCount}명 추가, 중복 고객 ${duplicateCount}명 건너뜀.`
     });
     await fetchCustomers();
   };

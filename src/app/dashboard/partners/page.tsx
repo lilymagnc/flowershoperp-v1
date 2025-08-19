@@ -24,15 +24,17 @@ export default function PartnersPage() {
     const { toast } = useToast();
     const { partners, loading: partnersLoading, addPartner, updatePartner, deletePartner, bulkAddPartners } = usePartners();
     const { user } = useAuth();
-    const isHeadOfficeAdmin = user?.role === '본사 관리자';
+    // 개발 단계에서는 권한 체크 제거
+    // const isHeadOfficeAdmin = user?.role === '본사 관리자';
+    const isHeadOfficeAdmin = true; // 개발 단계에서는 모든 권한 허용
     const userBranch = user?.franchise;
     const partnerTypes = useMemo(() => [...new Set(partners.map(p => p.type))], [partners]);
     const filteredPartners = useMemo(() => {
         let filtered = partners;
-        // 권한에 따른 지점 필터링
-        if (!isHeadOfficeAdmin && userBranch) {
-            filtered = filtered.filter(partner => partner.branch === userBranch);
-        }
+        // 개발 단계에서는 권한에 따른 지점 필터링 제거
+        // if (!isHeadOfficeAdmin && userBranch) {
+        //     filtered = filtered.filter(partner => partner.branch === userBranch);
+        // }
         // 검색어 필터링
         filtered = filtered.filter(partner => 
             String(partner.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||

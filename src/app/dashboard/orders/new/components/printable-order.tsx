@@ -1,7 +1,7 @@
 
 "use client";
 import React from 'react';
-import Image from 'next/image';
+import { useSettings } from '@/hooks/use-settings';
 export interface OrderPrintData {
     orderDate: string;
     ordererName: string;
@@ -35,11 +35,16 @@ const paymentMethodMap = {
     shopping_mall: "쇼핑몰",
     epay: "이페이"
 };
-// Use a class component to ensure compatibility with react-to-print's ref handling.
-export class PrintableOrder extends React.Component<PrintableOrderProps> {
-    render() {
-        const { data } = this.props;
-        if (!data) return null;
+// Use a function component with settings
+export function PrintableOrder({ data }: PrintableOrderProps) {
+    const { settings, loading: settingsLoading } = useSettings();
+    
+    // 디버깅용 로그
+    console.log('PrintableOrder - 설정 로딩 상태:', settingsLoading);
+    console.log('PrintableOrder - 설정 데이터:', settings);
+    console.log('PrintableOrder - 로고 URL:', settings?.logoUrl);
+    
+    if (!data) return null;
         const Checkbox = ({ checked }: { checked: boolean }) => (
             <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '1px solid black', marginRight: '4px', position: 'relative', verticalAlign: 'middle' }}>
                 {checked && <span style={{ position: 'absolute', top: '-3px', left: '2px', fontSize: '14px' }}>✔</span>}
@@ -51,31 +56,51 @@ export class PrintableOrder extends React.Component<PrintableOrderProps> {
                 <div className="text-center mb-4">
                     { !isReceipt && (
                         <>
-                        <Image
-                            src="https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg"
-                            alt="Logo"
-                            width={180}
-                            height={45}
-                            className="mx-auto"
-                            style={{ height: 'auto' }}
-                            priority
-                            unoptimized
-                        />
-                        <h1 className="text-2xl font-bold mt-2">릴리맥 플라워앤가든 {title}</h1>
+                        {settings?.logoUrl ? (
+                            <img
+                                src={settings.logoUrl}
+                                alt="Logo"
+                                width={180}
+                                height={45}
+                                className="mx-auto"
+                                onError={(error) => {
+                                    console.error('주문서 로고 로딩 실패:', error);
+                                }}
+                            />
+                        ) : (
+                            <img
+                                src="https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg"
+                                alt="Logo"
+                                width={180}
+                                height={45}
+                                className="mx-auto"
+                            />
+                        )}
+                        <h1 className="text-2xl font-bold mt-2">{settings?.flowerShopName || '플라워샵'} {title}</h1>
                         </>
                     )}
                     { isReceipt && (
                         <>
-                            <Image
-                                src="https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg"
-                                alt="Logo"
-                                width={90}
-                                height={23}
-                                className="mx-auto"
-                                style={{ height: 'auto' }}
-                                priority
-                                unoptimized
-                            />
+                            {settings?.logoUrl ? (
+                                <img
+                                    src={settings.logoUrl}
+                                    alt="Logo"
+                                    width={90}
+                                    height={23}
+                                    className="mx-auto"
+                                    onError={(error) => {
+                                        console.error('인수증 로고 로딩 실패:', error);
+                                    }}
+                                />
+                            ) : (
+                                <img
+                                    src="https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg"
+                                    alt="Logo"
+                                    width={90}
+                                    height={23}
+                                    className="mx-auto"
+                                />
+                            )}
                             <h1 className="text-2xl font-bold mt-2">{title}</h1>
                         </>
                     )}
@@ -151,20 +176,10 @@ export class PrintableOrder extends React.Component<PrintableOrderProps> {
                     <table className="w-full border-collapse border-black text-xs">
                          <tbody>
                             <tr>
-                                <td className="border border-black p-1 font-bold w-[20%]">릴리맥여의도점</td>
-                                <td className="border border-black p-1 w-[30%]">010-8241-9518</td>
-                                <td className="border border-black p-1 font-bold w-[20%]">릴리맥여의도2호점</td>
-                                <td className="border border-black p-1 w-[30%]">010-7939-9518</td>
-                            </tr>
-                            <tr>
-                                <td className="border border-black p-1 font-bold">릴리맥NC이스트폴점</td>
-                                <td className="border border-black p-1">010-2908-5459</td>
-                                <td className="border border-black p-1 font-bold">릴리맥광화문점</td>
-                                <td className="border border-black p-1">010-2385-9518</td>
-                            </tr>
-                            <tr>
-                                 <td className="border border-black p-1 font-bold">[온라인쇼핑몰]</td>
-                                 <td className="border border-black p-1" colSpan={3}>www.lilymagshop.co.kr</td>
+                                <td className="border border-black p-1 font-bold w-[20%]">{settings?.flowerShopName || '플라워샵'}</td>
+                                <td className="border border-black p-1 w-[30%]">{settings?.contactPhone || '02-1234-5678'}</td>
+                                <td className="border border-black p-1 font-bold w-[20%]">주소</td>
+                                <td className="border border-black p-1 w-[30%]">{settings?.shopAddress || '서울시 강남구 테헤란로 123'}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -172,4 +187,3 @@ export class PrintableOrder extends React.Component<PrintableOrderProps> {
             </div>
         );
     }
-}

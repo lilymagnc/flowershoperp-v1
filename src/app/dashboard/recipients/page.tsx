@@ -21,8 +21,9 @@ export default function RecipientsPage() {
   const [selectedBranch, setSelectedBranch] = useState<string>("all");
   const [selectedDistrict, setSelectedDistrict] = useState<string>("all");
   const [viewMode] = useState<"list" | "stats">("list");
-  // 사용자 권한에 따른 지점 필터링
-  const isAdmin = user?.role === '본사 관리자';
+  // 개발 단계에서는 권한 체크 제거
+  // const isAdmin = user?.role === '본사 관리자';
+  const isAdmin = true; // 개발 단계에서는 모든 권한 허용
   const userBranch = user?.franchise;
   // 사용자가 볼 수 있는 지점 목록
   const availableBranches = useMemo(() => {

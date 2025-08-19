@@ -202,26 +202,32 @@ export function useUserRole() {
       throw error;
     }
   };
-  // 권한 확인 함수들
+  // 개발 단계에서는 모든 권한 허용
   const hasPermission = (permission: Permission): boolean => {
-    if (!userRole || !userRole.isActive) return false;
-    return userRole.permissions.includes(permission);
+    // if (!userRole || !userRole.isActive) return false;
+    // return userRole.permissions.includes(permission);
+    return true; // 개발 단계에서는 모든 권한 허용
   };
   const hasAnyPermission = (permissions: Permission[]): boolean => {
-    if (!userRole || !userRole.isActive) return false;
-    return permissions.some(permission => userRole.permissions.includes(permission));
+    // if (!userRole || !userRole.isActive) return false;
+    // return permissions.some(permission => userRole.permissions.includes(permission));
+    return true; // 개발 단계에서는 모든 권한 허용
   };
   const isHQManager = (): boolean => {
-    return userRole?.role === 'hq_manager' && userRole.isActive;
+    // return userRole?.role === 'hq_manager' && userRole.isActive;
+    return true; // 개발 단계에서는 모든 권한 허용
   };
   const isBranchUser = (): boolean => {
-    return userRole?.role === 'branch_user' && userRole.isActive;
+    // return userRole?.role === 'branch_user' && userRole.isActive;
+    return true; // 개발 단계에서는 모든 권한 허용
   };
   const isBranchManager = (): boolean => {
-    return userRole?.role === 'branch_manager' && userRole.isActive;
+    // return userRole?.role === 'branch_manager' && userRole.isActive;
+    return true; // 개발 단계에서는 모든 권한 허용
   };
   const isAdmin = (): boolean => {
-    return userRole?.role === 'admin' && userRole.isActive;
+    // return userRole?.role === 'admin' && userRole.isActive;
+    return true; // 개발 단계에서는 모든 권한 허용
   };
   // 컴포넌트 마운트 시 사용자 역할 조회
   useEffect(() => {

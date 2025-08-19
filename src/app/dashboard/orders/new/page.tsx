@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { useToast } from "@/hooks/use-toast";
 import { MinusCircle, PlusCircle, Trash2, Store, Search, Calendar as CalendarIcon, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useBranches, Branch, initialBranches } from "@/hooks/use-branches";
+
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Calendar } from "@/components/ui/calendar";
 import { Command, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -28,7 +28,9 @@ import { Badge } from "@/components/ui/badge";
 import { useProducts, Product } from "@/hooks/use-products";
 import { useCustomers, Customer } from "@/hooks/use-customers";
 import { useAuth } from "@/hooks/use-auth";
+import { useSettings } from "@/hooks/use-settings";
 import { useDiscountSettings } from "@/hooks/use-discount-settings";
+import { useBranches } from "@/hooks/use-branches";
 import { Timestamp } from "firebase/firestore";
 import { debounce } from "lodash";
 interface OrderItem extends Product {
@@ -46,11 +48,12 @@ declare global {
 }
 export default function NewOrderPage() {
   const { user } = useAuth();
-  const { branches, loading: branchesLoading, fetchBranches } = useBranches();
+  const { settings } = useSettings();
   const { products: allProducts, loading: productsLoading } = useProducts();
   const { orders, loading: ordersLoading, addOrder, updateOrder } = useOrders();
   const { findCustomersByContact, customers } = useCustomers();
   const { discountSettings, canApplyDiscount, getActiveDiscountRates } = useDiscountSettings();
+  const { branches, loading: branchesLoading } = useBranches();
   const router = useRouter();
   const searchParams = useSearchParams();
   const orderId = searchParams.get('id');
@@ -69,7 +72,7 @@ export default function NewOrderPage() {
   }, []);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const { toast } = useToast();
-  const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
+
   const [deliveryFeeType, setDeliveryFeeType] = useState<"auto" | "manual">("auto");
   const [manualDeliveryFee, setManualDeliveryFee] = useState(0);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
@@ -93,26 +96,7 @@ export default function NewOrderPage() {
   const [isCustomerSearchOpen, setIsCustomerSearchOpen] = useState(false);
   const [orderType, setOrderType] = useState<OrderType>("store");
   const [receiptType, setReceiptType] = useState<ReceiptType>("store_pickup");
-  // 사용자 권한에 따른 지점 필터링
-  const isAdmin = user?.role === '본사 관리자';
-  const userBranch = user?.franchise;
-  // 사용자가 선택할 수 있는 지점 목록
-  const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 관리자는 모든 지점
-    } else {
-      return branches.filter(branch => branch.name === userBranch); // 직원은 소속 지점만
-    }
-  }, [branches, isAdmin, userBranch]);
-  // 직원의 경우 자동으로 소속 지점으로 설정
-  useEffect(() => {
-    if (!isAdmin && userBranch && !selectedBranch) {
-      const userBranchData = branches.find(branch => branch.name === userBranch);
-      if (userBranchData) {
-        setSelectedBranch(userBranchData);
-      }
-    }
-  }, [isAdmin, userBranch, selectedBranch, branches]);
+
   // 현재 시간을 30분 단위로 반올림하는 함수
   const getInitialTime = () => {
     const now = new Date();
@@ -161,53 +145,38 @@ export default function NewOrderPage() {
     }
     return options;
   }, []);
-  const branchProducts = useMemo(() => {
-    if (!selectedBranch) return [];
-    return allProducts.filter(p => p.branch === selectedBranch.name);
-  }, [allProducts, selectedBranch]);
-  const mainCategories = useMemo(() => [...new Set(branchProducts.map(p => p.mainCategory).filter(Boolean))], [branchProducts]);
+  const availableProducts = useMemo(() => {
+    return allProducts;
+  }, [allProducts]);
+  const mainCategories = useMemo(() => [...new Set(availableProducts.map(p => p.mainCategory).filter(Boolean))], [availableProducts]);
   const midCategories = useMemo(() => {
     if (!selectedMainCategory) return [];
-    return [...new Set(branchProducts.filter(p => p.mainCategory === selectedMainCategory).map(p => p.midCategory).filter(Boolean))];
-  }, [branchProducts, selectedMainCategory]);
+    return [...new Set(availableProducts.filter(p => p.mainCategory === selectedMainCategory).map(p => p.midCategory).filter(Boolean))];
+  }, [availableProducts, selectedMainCategory]);
   const filteredProducts = useMemo(() => {
-    return branchProducts.filter(p => 
+    return availableProducts.filter(p => 
         (!selectedMainCategory || p.mainCategory === selectedMainCategory) &&
         (!selectedMidCategory || p.midCategory === selectedMidCategory)
     );
-  }, [branchProducts, selectedMainCategory, selectedMidCategory]);
+  }, [availableProducts, selectedMainCategory, selectedMidCategory]);
   const todaysOrders = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return orders.filter(order => {
-      if (!selectedBranch || order.branchName !== selectedBranch.name) return false;
       if (!order.orderDate) return false;
       const orderDate = (order.orderDate as Timestamp).toDate();
       orderDate.setHours(0,0,0,0);
       return orderDate.getTime() === today.getTime();
     })
-  }, [orders, selectedBranch]);
-  // 사용자 역할에 따른 자동 지점 선택
+  }, [orders]);
+
   useEffect(() => {
-    if (user && branches.length > 0 && !selectedBranch) {
-      // 본사 관리자가 아닌 경우 해당 지점 자동 선택
-      if (user.role !== '본사 관리자' && user.franchise && user.franchise !== '본사') {
-        const userBranch = branches.find(branch => branch.name === user.franchise);
-        if (userBranch) {
-          setSelectedBranch(userBranch);
-        }
-      }
-    }
-  }, [user, branches, selectedBranch]);
-  useEffect(() => {
-      if (orderId && !ordersLoading && orders.length > 0 && !productsLoading && allProducts.length > 0 && !branchesLoading && branches.length > 0) {
+      if (orderId && !ordersLoading && orders.length > 0 && !productsLoading && allProducts.length > 0) {
         const foundOrder = orders.find(o => o.id === orderId);
         if(foundOrder) {
             setExistingOrder(foundOrder);
-            const branch = branches.find(b => b.id === foundOrder.branchId);
-            setSelectedBranch(branch || null);
             setOrderItems(foundOrder.items.map(item => {
-                const product = allProducts.find(p => p.id === item.id && p.branch === foundOrder.branchName);
+                const product = allProducts.find(p => p.id === item.id);
                 return { ...product!, quantity: item.quantity };
             }).filter(item => item.id)); 
             if(foundOrder.deliveryInfo?.district && foundOrder.deliveryInfo.district !== '') {
@@ -262,7 +231,7 @@ export default function NewOrderPage() {
             setPaymentStatus(foundOrder.payment.status as PaymentStatus);
         }
       }
-  }, [orderId, orders, ordersLoading, branches, branchesLoading, allProducts, productsLoading])
+  }, [orderId, orders, ordersLoading, allProducts, productsLoading])
   useEffect(() => {
     if (receiptType === 'store_pickup' || receiptType === 'pickup_reservation') {
       setPickerName(ordererName);
@@ -280,27 +249,47 @@ export default function NewOrderPage() {
       setDeliveryFeeType("auto");
     }
   }, [ordererName, ordererContact, receiptType]);
+  // 배송비 자동 계산 함수
+  const calculateDeliveryFee = useCallback((address: string, district: string) => {
+    if (!address || !district || branchesLoading) return 0;
+    
+    // 메인 지점의 배송비 설정 찾기
+    const mainBranch = branches.find(branch => branch.name === '메인 매장');
+    if (!mainBranch?.deliveryFees) return 0;
+    
+    // 지역별 배송비 찾기
+    const deliveryFeeInfo = mainBranch.deliveryFees.find(fee => 
+      fee.district === district || address.includes(fee.district)
+    );
+    
+    if (deliveryFeeInfo) {
+      return deliveryFeeInfo.fee;
+    }
+    
+    // 기본 배송비 반환
+    return settings?.defaultDeliveryFee || 0;
+  }, [branches, branchesLoading, settings?.defaultDeliveryFee]);
+
   // 자동계산이 불가능할 경우 직접입력으로 변경하는 로직 추가
   useEffect(() => {
     if (receiptType === 'delivery_reservation' && deliveryFeeType === 'auto') {
-      // 지점이 선택되지 않았거나 배송비 정보가 없는 경우
-      if (!selectedBranch || !selectedBranch.deliveryFees || selectedBranch.deliveryFees.length === 0) {
-        setDeliveryFeeType("manual");
-        setManualDeliveryFee(0);
-      }
+      // 배송비 정보가 없는 경우 직접입력으로 변경
+      setDeliveryFeeType("manual");
+      setManualDeliveryFee(0);
     }
-  }, [selectedBranch, deliveryFeeType, receiptType]);
+  }, [deliveryFeeType, receiptType]);
+
   const deliveryFee = useMemo(() => {
     if (receiptType === 'store_pickup' || receiptType === 'pickup_reservation') return 0;
     if (deliveryFeeType === 'manual') {
       return manualDeliveryFee;
     }
-    if (!selectedBranch || !selectedDistrict) {
-      return 0;
+    // 자동 계산: 주소와 지역 정보가 있으면 배송비 계산
+    if (deliveryAddress && selectedDistrict) {
+      return calculateDeliveryFee(deliveryAddress, selectedDistrict);
     }
-    const feeInfo = selectedBranch.deliveryFees?.find(df => df.district === selectedDistrict);
-    return feeInfo ? feeInfo.fee : (selectedBranch.deliveryFees?.find(df => df.district === "기타")?.fee ?? 0);
-  }, [deliveryFeeType, manualDeliveryFee, selectedBranch, selectedDistrict, receiptType]);
+    return 0;
+  }, [deliveryFeeType, manualDeliveryFee, receiptType, deliveryAddress, selectedDistrict, calculateDeliveryFee]);
   const debouncedSearch = useCallback(
     debounce(async (contact: string) => {
       if (contact.length >= 4) {
@@ -345,7 +334,7 @@ const handleOrdererContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setter(formattedPhoneNumber);
   }
   const handleAddProduct = (docId: string) => {
-    const productToAdd = branchProducts.find(p => p.docId === docId);
+    const productToAdd = availableProducts.find(p => p.docId === docId);
     if (!productToAdd) return;
     setOrderItems(prevItems => {
         const existingItem = prevItems.find(item => item.docId === productToAdd.docId);
@@ -384,14 +373,9 @@ const handleOrdererContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setIsSubmitting(false);
       return;
     }
-    if (!selectedBranch) {
-        toast({ variant: 'destructive', title: '주문 오류', description: '출고 지점을 선택해주세요.' });
-        setIsSubmitting(false);
-        return;
-    }
     const orderPayload: OrderData = {
-        branchId: selectedBranch.id,
-        branchName: selectedBranch.name,
+        branchId: "main",
+        branchName: "메인 매장",
         orderDate: existingOrder?.orderDate || new Date(),
         status: existingOrder?.status || 'processing', 
         orderType: orderType,
@@ -446,30 +430,7 @@ const handleOrdererContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setIsSubmitting(false);
     }
   }
-  // 지점 데이터 디버깅을 위한 useEffect 추가
-  useEffect(() => {
-    if (selectedBranch) {
-      }
-  }, [selectedBranch]);
-  const handleBranchChange = (branchId: string) => {
-    // 먼저 관련 상태들을 초기화
-    setOrderItems([]);
-    setSelectedDistrict(null);
-    setSelectedMainCategory(null);
-    setSelectedMidCategory(null);
-    setSelectedCustomer(null);
-    setUsedPoints(0);
-    setSelectedDiscountRate(0);
-    setCustomDiscountRate(0);
-    if (!branchId) {
-      setSelectedBranch(null);
-      return;
-    }
-    const branch = branches.find(b => b.id === branchId);
-    if (branch) {
-      setSelectedBranch(branch);
-    }
-  };
+
 const handleCustomerSelect = (customer: Customer) => {
   setSelectedCustomer(customer);
   setOrdererName(customer.name);
@@ -565,11 +526,22 @@ const debouncedCustomerSearch = useCallback(
           }
           setDeliveryAddress(fullAddress);
           setDeliveryAddressDetail('');
-          const district = data.sigungu;
-          if(selectedBranch?.deliveryFees?.some(df => df.district === district)) {
+          
+          // 주소에서 지역(구) 추출하여 배송비 자동 계산
+          const addressParts = fullAddress.split(' ');
+          const district = addressParts.find(part => part.endsWith('구') || part.endsWith('시'));
+          if (district) {
             setSelectedDistrict(district);
-          } else {
-            setSelectedDistrict("기타");
+            // 배송비 자동 계산
+            if (deliveryFeeType === 'auto') {
+              const calculatedFee = calculateDeliveryFee(fullAddress, district);
+              if (calculatedFee > 0) {
+                toast({
+                  title: '배송비 자동 계산',
+                  description: `${district} 지역 배송비: ₩${calculatedFee.toLocaleString()}`,
+                });
+              }
+            }
           }
         }
       }).open();
@@ -587,63 +559,17 @@ const debouncedCustomerSearch = useCallback(
         return <Badge variant="outline">{status}</Badge>;
     }
   };
-  const pageTitle = existingOrder ? '주문 수정' : '주문테이블';
+  const pageTitle = existingOrder ? '주문 수정' : `${settings?.flowerShopName || '플라워샵'} 주문테이블`;
   const pageDescription = existingOrder ? '기존 주문을 수정합니다.' : '새로운 주문을 등록합니다.';
-  const isLoading = ordersLoading || productsLoading || branchesLoading;
+  const isLoading = ordersLoading || productsLoading;
   return (
     <div>
         <PageHeader
           title={pageTitle}
           description={pageDescription}
         />
-        <Card className="mb-6">
-            <CardHeader>
-                <CardTitle>지점 선택</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                  {!selectedBranch ? (
-                    <div className="flex items-center gap-2">
-                        <Store className="h-5 w-5 text-muted-foreground" />
-                        <Select 
-                          onValueChange={handleBranchChange} 
-                          disabled={isLoading || !!existingOrder || !isAdmin}
-                        >
-                            <SelectTrigger id="branch-select" className="w-[300px]">
-                                <SelectValue placeholder={
-                                  isLoading ? "지점 불러오는 중..." : 
-                                  !isAdmin ? `${userBranch || '지점'} 자동 선택` : 
-                                  "지점 선택"
-                                } />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {availableBranches.filter(b => b.type !== '본사').map(branch => (
-                                    <SelectItem key={branch.id} value={branch.id}>
-                                        {branch.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-4">
-                      <div className="text-lg font-medium">
-                          <span className="text-primary">{selectedBranch.name}</span>
-                          {!isAdmin && (
-                            <Badge variant="secondary" className="ml-2">자동 선택</Badge>
-                          )}
-                      </div>
-                      {isAdmin && (
-                        <Button variant="outline" size="sm" onClick={() => handleBranchChange("")} disabled={!!existingOrder}>
-                            지점 변경
-                        </Button>
-                      )}
-                    </div>
-                  )}
-              </div>
-            </CardContent>
-        </Card>
-        <fieldset disabled={!selectedBranch || isLoading} className="disabled:opacity-50">
+
+        <fieldset disabled={isLoading} className="disabled:opacity-50">
           <div className="grid gap-8 xl:grid-cols-3">
             <div className="xl:col-span-2">
               <Card>
@@ -1078,32 +1004,13 @@ const debouncedCustomerSearch = useCallback(
                                           <div className="flex items-center gap-2 mt-2">
                                               {deliveryFeeType === 'auto' ? (
                                                   <div className="space-y-2 w-full">
-                                                      <Select onValueChange={setSelectedDistrict} value={selectedDistrict ?? ''} disabled={!selectedBranch}>
-                                                          <SelectTrigger id="selected-district">
-                                                              <SelectValue placeholder={!selectedBranch ? "지점을 먼저 선택하세요" : "지역 선택"} />
-                                                          </SelectTrigger>
-                                                          <SelectContent>
-                                                              {selectedBranch?.deliveryFees && selectedBranch.deliveryFees.length > 0 ? (
-                                                                  selectedBranch.deliveryFees.map(df => (
-                                                                      <SelectItem key={df.district} value={df.district}>
-                                                                          {df.district} - ₩{df.fee.toLocaleString()}
-                                                                      </SelectItem>
-                                                                  ))
-                                                              ) : (
-                                                                  <SelectItem value="no-data" disabled>
-                                                                      배송비 정보가 없습니다
-                                                                  </SelectItem>
-                                                              )}
-                                                          </SelectContent>
-                                                      </Select>
-                                                      {selectedDistrict && selectedBranch?.deliveryFees && (
-                                                          <div className="text-xs text-green-600 bg-green-50 p-2 rounded border">
-                                                              ✅ 선택된 지역: {selectedDistrict} - ₩{deliveryFee.toLocaleString()}
+                                                      {deliveryAddress && selectedDistrict ? (
+                                                          <div className="text-sm text-green-600 bg-green-50 p-2 rounded border">
+                                                              ✅ {selectedDistrict} 지역 배송비: ₩{deliveryFee.toLocaleString()}
                                                           </div>
-                                                      )}
-                                                      {(!selectedBranch?.deliveryFees || selectedBranch.deliveryFees.length === 0) && (
-                                                          <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border">
-                                                              ⚠️ 이 지점에는 배송비 정보가 설정되지 않았습니다. 직접 입력을 사용하세요.
+                                                      ) : (
+                                                          <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded border">
+                                                              ℹ️ 주소를 검색하면 배송비가 자동으로 계산됩니다.
                                                           </div>
                                                       )}
                                                   </div>
@@ -1177,12 +1084,12 @@ const debouncedCustomerSearch = useCallback(
                             <span>₩{orderSummary.subtotal.toLocaleString()}</span>
                         </div>
                         {/* 할인율 선택 */}
-                        {selectedBranch && canApplyDiscount(selectedBranch.id, orderSummary.subtotal) && (
+                        {canApplyDiscount("main", orderSummary.subtotal) && (
                           <>
                             <div className="space-y-2">
                               <Label>할인율 선택</Label>
                               <div className="grid grid-cols-2 gap-2">
-                                {getActiveDiscountRates(selectedBranch.id).map((rate) => (
+                                {getActiveDiscountRates("main").map((rate) => (
                                   <Button
                                     key={rate.rate}
                                     variant={selectedDiscountRate === rate.rate ? "default" : "outline"}

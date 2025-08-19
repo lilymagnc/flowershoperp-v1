@@ -32,7 +32,9 @@ interface ProductDetailsProps {
 }
 export function ProductDetails({ isOpen, onOpenChange, onEdit, product }: ProductDetailsProps) {
   const { user } = useAuth();
-  const isHeadOfficeAdmin = user?.role === '본사 관리자';
+  // 개발 단계에서는 권한 체크 제거
+  // const isHeadOfficeAdmin = user?.role === '본사 관리자';
+  const isHeadOfficeAdmin = true; // 개발 단계에서는 모든 권한 허용
   if (!product) return null;
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>

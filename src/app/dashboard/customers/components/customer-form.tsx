@@ -25,7 +25,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useEffect } from "react"
-import { useBranches } from "@/hooks/use-branches"
 import { CalendarIcon } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
@@ -40,7 +39,6 @@ const customerSchema = z.object({
   companyName: z.string().optional(),
   contact: z.string().min(1, "연락처를 입력해주세요."),
   email: z.string().email("유효한 이메일을 입력해주세요.").optional().or(z.literal('')),
-  branch: z.string().min(1, "담당 지점을 선택해주세요."),
   grade: z.string().optional(),
   tags: z.string().optional(),
   birthday: z.date().optional().nullable(),
@@ -66,7 +64,6 @@ const defaultValues: CustomerFormValues = {
   companyName: "",
   contact: "",
   email: "",
-  branch: "",
   grade: "신규",
   tags: "",
   birthday: null,
@@ -79,7 +76,6 @@ const defaultValues: CustomerFormValues = {
   businessAddress: "",
 }
 export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: CustomerFormProps) {
-  const { branches } = useBranches()
   const form = useForm<CustomerFormValues>({
     resolver: zodResolver(customerSchema),
     defaultValues,
@@ -173,49 +169,27 @@ export function CustomerForm({ isOpen, onOpenChange, onSubmit, customer }: Custo
                 </FormItem>
               )}
             />
-            <div className="grid grid-cols-2 gap-4">
-                <FormField
-                    control={form.control}
-                    name="branch"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>담당 지점</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                                <SelectTrigger><SelectValue placeholder="지점 선택" /></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                {branches.filter(b => b.type !== '본사').map(branch => (
-                                    <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-                <FormField
-                    control={form.control}
-                    name="grade"
-                    render={({ field }) => (
-                    <FormItem>
-                        <FormLabel>고객 등급</FormLabel>
-                        <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl>
-                                <SelectTrigger><SelectValue placeholder="등급 선택" /></SelectTrigger>
-                            </FormControl>
-                            <SelectContent>
-                                <SelectItem value="신규">신규</SelectItem>
-                                <SelectItem value="일반">일반</SelectItem>
-                                <SelectItem value="VIP">VIP</SelectItem>
-                                <SelectItem value="VVIP">VVIP</SelectItem>
-                            </SelectContent>
-                        </Select>
-                        <FormMessage />
-                    </FormItem>
-                    )}
-                />
-            </div>
+            <FormField
+                control={form.control}
+                name="grade"
+                render={({ field }) => (
+                <FormItem>
+                    <FormLabel>고객 등급</FormLabel>
+                    <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                            <SelectTrigger><SelectValue placeholder="등급 선택" /></SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                            <SelectItem value="신규">신규</SelectItem>
+                            <SelectItem value="일반">일반</SelectItem>
+                            <SelectItem value="VIP">VIP</SelectItem>
+                            <SelectItem value="VVIP">VVIP</SelectItem>
+                        </SelectContent>
+                    </Select>
+                    <FormMessage />
+                </FormItem>
+                )}
+            />
             <Separator className="my-6" />
             <p className="text-sm font-semibold">추가 정보</p>
             <Separator />

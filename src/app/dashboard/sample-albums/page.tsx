@@ -16,7 +16,9 @@ export default function SampleAlbumsPage() {
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const { albums, loading, createAlbum, deleteAlbum } = useAlbums();
   const { user } = useAuth();
-  const isHeadOfficeAdmin = user?.role === '본사 관리자';
+  // 개발 단계에서는 권한 체크 제거
+  // const isHeadOfficeAdmin = user?.role === '본사 관리자';
+  const isHeadOfficeAdmin = true; // 개발 단계에서는 모든 권한 허용
   const userBranch = user?.franchise;
   // 검색 및 필터링된 앨범
   const filteredAlbums = albums.filter(album => {

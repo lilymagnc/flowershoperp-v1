@@ -4,13 +4,12 @@ import { initializeFirestore, memoryLocalCache, getFirestore } from "firebase/fi
 import { getStorage } from "firebase/storage";
 // Firebase 설정 (직접 하드코딩)
 const firebaseConfig = {
-  apiKey: "AIzaSyApy5zme7H15h1UZd1B9hBDOOWgpbvOLJ4",
-  authDomain: "lilymagerp-fs1.firebaseapp.com",
-  databaseURL: "https://lilymagerp-fs1-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "lilymagerp-fs1",
-  storageBucket: "lilymagerp-fs1.firebasestorage.app",
-  messagingSenderId: "1069828102888",
-  appId: "1:1069828102888:web:24927eab4719f3e75d475d",
+  apiKey: "AIzaSyBuqtsInY2RwGsAtblcZbVLz-75S82VUmc",
+  authDomain: "flowershoper-pv1.firebaseapp.com",
+  projectId: "flowershoper-pv1",
+  storageBucket: "flowershoper-pv1.firebasestorage.app",
+  messagingSenderId: "875038211942",
+  appId: "1:875038211942:web:31f55a6c1558481ca152a7",
 };
 // Initialize Firebase
 let app;

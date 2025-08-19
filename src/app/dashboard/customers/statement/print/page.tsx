@@ -7,15 +7,12 @@ import { Printer, ArrowLeft } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCustomers } from "@/hooks/use-customers";
 import { useOrders } from "@/hooks/use-orders";
-import { useBranches } from "@/hooks/use-branches";
 import { Customer } from "@/hooks/use-customers";
 import { Order } from "@/hooks/use-orders";
-import { Branch } from "@/hooks/use-branches";
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 interface StatementData {
   customer: Customer;
-  branch: Branch | null;
   period: {
     startDate: Date;
     endDate: Date;
@@ -33,7 +30,6 @@ export default function StatementPrintPage() {
   const searchParams = useSearchParams();
   const { customers } = useCustomers();
   const { orders } = useOrders();
-  const { branches } = useBranches();
   const [statementData, setStatementData] = useState<StatementData | null>(null);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -51,8 +47,6 @@ export default function StatementPrintPage() {
       router.back();
       return;
     }
-    // 고객의 담당지점 정보 찾기
-    const branch = branches.find(b => b.name === customer.branch);
     const start = new Date(startDate);
     const end = new Date(endDate);
     // 고객의 주문 내역 필터링 - 연락처로 매칭
@@ -71,13 +65,12 @@ export default function StatementPrintPage() {
     };
     setStatementData({
       customer,
-      branch,
       period: { startDate: start, endDate: end },
       orders: customerOrders,
       summary
     });
     setLoading(false);
-  }, [searchParams, customers, orders, branches, router]);
+  }, [searchParams, customers, orders, router]);
   const handlePrint = () => {
     window.print();
   };

@@ -33,6 +33,9 @@ const nextConfig = {
         unoptimized: false,
     },
     
+    // React Strict Mode 비활성화 (개발 단계에서만)
+    reactStrictMode: false,
+    
     // CSS 최적화
     experimental: {
         // optimizeCss: true, // Vercel에서 문제가 있어서 비활성화

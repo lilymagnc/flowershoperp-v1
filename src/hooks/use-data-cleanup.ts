@@ -1,5 +1,5 @@
 "use client";
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { collection, getDocs, deleteDoc, doc, writeBatch, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useToast } from './use-toast';
@@ -14,9 +14,23 @@ export function useDataCleanup() {
   const [progress, setProgress] = useState<CleanupProgress | null>(null);
   const { toast } = useToast();
   const { user } = useAuth();
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const safeSetState = (setter: React.Dispatch<React.SetStateAction<any>>, value: any) => {
+    if (isMountedRef.current) {
+      setter(value);
+    }
+  };
   const cleanupCollection = async (collectionName: string, description: string) => {
     try {
-      setProgress(prev => ({ 
+      safeSetState(setProgress, prev => ({ 
         total: prev?.total || 0, 
         completed: prev?.completed || 0, 
         current: `${description} 삭제 중...` 
@@ -85,8 +99,8 @@ export function useDataCleanup() {
       });
       return;
     }
-    setLoading(true);
-    setProgress({ total: 10, completed: 0, current: '초기화 시작...' });
+    safeSetState(setLoading, true);
+    safeSetState(setProgress, { total: 10, completed: 0, current: '초기화 시작...' });
     try {
       const cleanupTasks = [
         { name: '주문 데이터', task: cleanupOrders },
@@ -103,7 +117,7 @@ export function useDataCleanup() {
       let totalDeleted = 0;
       for (let i = 0; i < cleanupTasks.length; i++) {
         const task = cleanupTasks[i];
-        setProgress(prev => ({ 
+        safeSetState(setProgress, prev => ({ 
           total: cleanupTasks.length, 
           completed: i, 
           current: `${task.name} 삭제 중...` 
@@ -116,21 +130,25 @@ export function useDataCleanup() {
           // 개별 실패해도 계속 진행
         }
       }
-      setProgress({ total: cleanupTasks.length, completed: cleanupTasks.length, current: '완료' });
-      toast({
-        title: '데이터 초기화 완료',
-        description: `총 ${totalDeleted}개의 데이터가 삭제되었습니다.`
-      });
+      safeSetState(setProgress, { total: cleanupTasks.length, completed: cleanupTasks.length, current: '완료' });
+      if (isMountedRef.current) {
+        toast({
+          title: '데이터 초기화 완료',
+          description: `총 ${totalDeleted}개의 데이터가 삭제되었습니다.`
+        });
+      }
     } catch (error) {
       console.error('데이터 초기화 오류:', error);
-      toast({
-        variant: 'destructive',
-        title: '오류',
-        description: '데이터 초기화 중 오류가 발생했습니다.'
-      });
+      if (isMountedRef.current) {
+        toast({
+          variant: 'destructive',
+          title: '오류',
+          description: '데이터 초기화 중 오류가 발생했습니다.'
+        });
+      }
     } finally {
-      setLoading(false);
-      setProgress(null);
+      safeSetState(setLoading, false);
+      safeSetState(setProgress, null);
     }
   };
   const cleanupSpecificData = async (dataType: string) => {
@@ -142,8 +160,8 @@ export function useDataCleanup() {
       });
       return;
     }
-    setLoading(true);
-    setProgress({ total: 1, completed: 0, current: `${dataType} 삭제 중...` });
+    safeSetState(setLoading, true);
+    safeSetState(setProgress, { total: 1, completed: 0, current: `${dataType} 삭제 중...` });
     try {
       let deleted = 0;
       switch (dataType) {
@@ -180,21 +198,25 @@ export function useDataCleanup() {
         default:
           throw new Error('알 수 없는 데이터 타입');
       }
-      setProgress({ total: 1, completed: 1, current: '완료' });
-      toast({
-        title: '삭제 완료',
-        description: `${dataType} ${deleted}개가 삭제되었습니다.`
-      });
+      safeSetState(setProgress, { total: 1, completed: 1, current: '완료' });
+      if (isMountedRef.current) {
+        toast({
+          title: '삭제 완료',
+          description: `${dataType} ${deleted}개가 삭제되었습니다.`
+        });
+      }
     } catch (error) {
       console.error(`${dataType} 삭제 오류:`, error);
-      toast({
-        variant: 'destructive',
-        title: '오류',
-        description: `${dataType} 삭제 중 오류가 발생했습니다.`
-      });
+      if (isMountedRef.current) {
+        toast({
+          variant: 'destructive',
+          title: '오류',
+          description: `${dataType} 삭제 중 오류가 발생했습니다.`
+        });
+      }
     } finally {
-      setLoading(false);
-      setProgress(null);
+      safeSetState(setLoading, false);
+      safeSetState(setProgress, null);
     }
   };
   return {

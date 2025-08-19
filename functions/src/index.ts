@@ -47,7 +47,7 @@ export const autoBackup = functions.pubsub
       // 백업할 컬렉션들
       const collections = [
         'orders', 'customers', 'products', 'materials', 
-        'materialRequests', 'branches', 'users', 'recipients',
+        'materialRequests', 'users', 'recipients',
         'expenses', 'budgets', 'partners'
       ];
       
@@ -91,7 +91,7 @@ export const manualBackup = functions.https.onCall(async (data, context) => {
     // 백업할 컬렉션들
     const collections = [
       'orders', 'customers', 'products', 'materials', 
-      'materialRequests', 'branches', 'users', 'recipients',
+      'materialRequests', 'users', 'recipients',
       'expenses', 'budgets', 'partners'
     ];
     

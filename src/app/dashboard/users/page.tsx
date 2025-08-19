@@ -178,13 +178,14 @@ export default function UsersPage() {
       });
     }
   };
-  if (currentUser?.role !== '본사 관리자') {
-    return (
-      <div className="flex items-center justify-center h-96 border rounded-md">
-        <p className="text-muted-foreground">이 페이지에 접근할 권한이 없습니다.</p>
-      </div>
-    );
-  }
+  // 개발 단계에서는 권한 체크 제거
+  // if (currentUser?.role !== '본사 관리자') {
+  //   return (
+  //     <div className="flex items-center justify-center h-96 border rounded-md">
+  //       <p className="text-muted-foreground">이 페이지에 접근할 권한이 없습니다.</p>
+  //     </div>
+  //   );
+  // }
   const activeUsers = users.filter(user => user.isActive !== false).length;
   const inactiveUsers = users.filter(user => user.isActive === false).length;
   return (

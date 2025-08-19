@@ -51,7 +51,9 @@ export function ProductTable({ products, onSelectionChange, onEdit, onDelete, se
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
 
-  const isHeadOfficeAdmin = user?.role === '본사 관리자';
+  // 개발 단계에서는 권한 체크 제거
+  // const isHeadOfficeAdmin = user?.role === '본사 관리자';
+  const isHeadOfficeAdmin = true; // 개발 단계에서는 모든 권한 허용
 
   const handleSelectionChange = (id: string) => {
     const newSelection = { ...selectedRows, [id]: !selectedRows[id] };

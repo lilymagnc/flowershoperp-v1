@@ -11,12 +11,13 @@ import { Badge } from "@/components/ui/badge";
 import { useOrders, Order } from "@/hooks/use-orders";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/use-auth";
+import { useSettings } from "@/hooks/use-settings";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useBranches } from "@/hooks/use-branches";
+
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
 import { MessagePrintDialog } from "./components/message-print-dialog";
 import { OrderDetailDialog } from "./components/order-detail-dialog";
@@ -28,12 +29,11 @@ import { exportOrdersToExcel } from "@/lib/excel-export";
 import { useToast } from "@/hooks/use-toast";
 export default function OrdersPage() {
   const { orders, loading, updateOrderStatus, updatePaymentStatus, cancelOrder, deleteOrder } = useOrders();
-  const { branches, loading: branchesLoading } = useBranches();
   const { user } = useAuth();
+  const { settings } = useSettings();
   const { toast } = useToast();
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState("all");
   const [isMessagePrintDialogOpen, setIsMessagePrintDialogOpen] = useState(false);
   const [selectedOrderForPrint, setSelectedOrderForPrint] = useState<Order | null>(null);
   const [isOrderDetailDialogOpen, setIsOrderDetailDialogOpen] = useState(false);
@@ -43,23 +43,7 @@ export default function OrdersPage() {
   const [isCancelDialogOpen, setIsCancelDialogOpen] = useState(false);
   const [isOrderEditDialogOpen, setIsOrderEditDialogOpen] = useState(false);
   const [selectedOrderForAction, setSelectedOrderForAction] = useState<Order | null>(null);
-  // 사용자 권한에 따른 지점 필터링
-  const isAdmin = user?.role === '본사 관리자';
-  const userBranch = user?.franchise;
-  // 사용자가 볼 수 있는 지점 목록
-  const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 관리자는 모든 지점
-    } else {
-      return branches.filter(branch => branch.name === userBranch); // 직원은 소속 지점만
-    }
-  }, [branches, isAdmin, userBranch]);
-  // 직원의 경우 자동으로 소속 지점으로 필터링
-  useEffect(() => {
-    if (!isAdmin && userBranch && selectedBranch === "all") {
-      setSelectedBranch(userBranch);
-    }
-  }, [isAdmin, userBranch, selectedBranch]);
+
   const handlePrint = (orderId: string) => {
     router.push(`/dashboard/orders/print-preview/${orderId}`);
   };
@@ -138,7 +122,7 @@ export default function OrdersPage() {
   };
   const handleExcelDownload = () => {
     const ordersToExport = filteredOrders.length > 0 ? filteredOrders : orders;
-    const filename = selectedBranch !== "all" ? `${selectedBranch}_주문내역` : "전체_주문내역";
+    const filename = "전체_주문내역";
     if (ordersToExport.length === 0) {
       toast({
         title: "다운로드할 데이터가 없습니다",
@@ -186,12 +170,6 @@ export default function OrdersPage() {
   };
   const filteredOrders = useMemo(() => {
     let filtered = orders;
-    // 권한에 따른 지점 필터링
-    if (!isAdmin && userBranch) {
-      filtered = filtered.filter(order => order.branchName === userBranch);
-    } else if (selectedBranch !== "all") {
-      filtered = filtered.filter(order => order.branchName === selectedBranch);
-    }
     // 검색어 필터링
     if (searchTerm) {
       filtered = filtered.filter(order =>
@@ -200,12 +178,12 @@ export default function OrdersPage() {
       );
     }
     return filtered;
-  }, [orders, searchTerm, selectedBranch, isAdmin, userBranch]);
+  }, [orders, searchTerm]);
   return (
     <>
       <PageHeader
-        title="주문 현황"
-        description={`모든 주문 내역을 확인하고 관리하세요.${!isAdmin ? ` (${userBranch})` : ''}`}
+        title={`${settings?.flowerShopName || '플라워샵'} 주문 현황`}
+        description="모든 주문 내역을 확인하고 관리하세요."
       >
         <div className="flex gap-2">
           <Button asChild>
@@ -229,7 +207,6 @@ export default function OrdersPage() {
             <CardTitle>주문 내역</CardTitle>
             <CardDescription>
               최근 주문 목록을 검색하고 관리합니다.
-              {!isAdmin && ` 현재 ${userBranch} 지점의 주문만 표시됩니다.`}
               <br />
               <span className="text-blue-600">💡 엑셀 다운로드:</span> 업로드 템플릿과 동일한 형식으로 다운로드되어 수정 후 재업로드가 가능합니다.
             </CardDescription>
@@ -246,21 +223,7 @@ export default function OrdersPage() {
                       className="pl-8"
                   />
               </div>
-              {isAdmin && (
-                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                    <SelectTrigger className="w-full sm:w-[180px]">
-                        <SelectValue placeholder="지점 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="all">전체 지점</SelectItem>
-                        {availableBranches.map((branch) => (
-                            <SelectItem key={branch.id} value={branch.name}>
-                                {branch.name}
-                            </SelectItem>
-                        ))}
-                    </SelectContent>
-                </Select>
-              )}
+
               <div className="text-sm text-muted-foreground">
                 총 {filteredOrders.length}건의 주문
               </div>
@@ -271,7 +234,6 @@ export default function OrdersPage() {
               <TableHead>주문 ID</TableHead>
               <TableHead>주문자</TableHead>
               <TableHead>주문일</TableHead>
-              <TableHead>출고지점</TableHead>
               <TableHead>상태</TableHead>
               <TableHead className="text-right">금액</TableHead>
               <TableHead className="text-right">작업</TableHead>
@@ -283,7 +245,6 @@ export default function OrdersPage() {
                   <TableRow key={i}>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-16" /></TableCell>
-                      <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
                       <TableCell className="text-right"><Skeleton className="h-4 w-20 ml-auto" /></TableCell>
@@ -302,7 +263,6 @@ export default function OrdersPage() {
                   <TableCell>
                     {order.orderDate && format((order.orderDate as Timestamp).toDate(), 'yyyy-MM-dd')}
                   </TableCell>
-                  <TableCell>{order.branchName}</TableCell>
                   <TableCell>
                       <div className="flex flex-col gap-1">
                         {getStatusBadge(order.status)}

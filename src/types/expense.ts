@@ -74,8 +74,6 @@ export interface ExpenseRequest {
   requesterId: string;
   requesterName: string;
   requesterRole: string;
-  branchId: string;
-  branchName: string;
   departmentId?: string;
   departmentName?: string;
   // 비용 정보
@@ -120,8 +118,6 @@ export interface Budget {
   usedAmount: number;
   remainingAmount: number;
   // 조직 정보
-  branchId?: string;
-  branchName?: string;
   departmentId?: string;
   departmentName?: string;
   // 승인 한도
@@ -146,10 +142,10 @@ export interface ExpenseAnalytics {
     count: number;
     percentage: number;
   }[];
-  // 지점별 분석
-  branchBreakdown: {
-    branchId: string;
-    branchName: string;
+  // 부서별 분석
+  departmentBreakdown: {
+    departmentId: string;
+    departmentName: string;
     amount: number;
     count: number;
     percentage: number;
@@ -173,8 +169,6 @@ export interface CreateExpenseRequestData {
   requesterId: string;
   requesterName: string;
   requesterRole: string;
-  branchId: string;
-  branchName: string;
   departmentId?: string;
   departmentName?: string;
   title: string;

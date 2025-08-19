@@ -1,13 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 export interface SystemSettings {
   // 사이트 정보
   siteName: string;
+  flowerShopName: string; // 플라워샵 이름 추가
   siteDescription: string;
   contactEmail: string;
   contactPhone: string;
+  shopAddress: string; // 샵 주소 추가
+
+  // 브랜딩 설정
+  logoUrl: string;
+  faviconUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
 
   // 기본 배송비 설정
   defaultDeliveryFee: number;
@@ -60,9 +68,15 @@ export interface SystemSettings {
 
 export const defaultSettings: SystemSettings = {
   siteName: "릴리맥 ERP",
+  flowerShopName: "릴리맥 플라워", // 플라워샵 이름 기본값
   siteDescription: "플라워샵 주문관리 및 가맹점 관리를 위한 ERP 시스템",
   contactEmail: "admin@lilymag.com",
   contactPhone: "02-1234-5678",
+  shopAddress: "서울시 강남구 테헤란로 123", // 샵 주소 기본값
+  logoUrl: "",
+  faviconUrl: "",
+  primaryColor: "#000000",
+  secondaryColor: "#666666",
   defaultDeliveryFee: 3000,
   freeDeliveryThreshold: 50000,
   emailNotifications: true,
@@ -124,10 +138,24 @@ export function useSettings() {
   const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
+  const safeSetState = (setter: React.Dispatch<React.SetStateAction<any>>, value: any) => {
+    if (isMountedRef.current) {
+      setter(value);
+    }
+  };
 
   const saveSettings = useCallback(async (newSettings: SystemSettings) => {
     try {
-      setError(null);
+      safeSetState(setError, null);
 
       const settingsDoc = doc(db, 'system', 'settings');
       await setDoc(settingsDoc, {
@@ -135,14 +163,14 @@ export function useSettings() {
         updatedAt: serverTimestamp()
       });
 
-      setSettings(newSettings);
+      safeSetState(setSettings, newSettings);
       return true;
     } catch (err) {
       console.error('설정 저장 중 오류:', err);
-      setError('설정 저장 중 오류가 발생했습니다.');
+      safeSetState(setError, '설정 저장 중 오류가 발생했습니다.');
       return false;
     }
-  }, []);
+  }, []); // safeSetState 의존성 제거
 
   const getSetting = useCallback((key: keyof SystemSettings) => {
     return settings[key];
@@ -151,34 +179,38 @@ export function useSettings() {
   useEffect(() => {
     const initializeSettings = async () => {
       try {
-        setLoading(true);
-        setError(null);
+        console.log('설정 초기화 시작...');
+        safeSetState(setLoading, true);
+        safeSetState(setError, null);
 
         const settingsDoc = doc(db, 'system', 'settings');
         const settingsSnapshot = await getDoc(settingsDoc);
 
         if (settingsSnapshot.exists()) {
           const data = settingsSnapshot.data();
-          setSettings({ ...defaultSettings, ...data });
+          console.log('설정 데이터 로드됨:', data);
+          safeSetState(setSettings, { ...defaultSettings, ...data });
         } else {
+          console.log('설정 데이터 없음, 기본값으로 초기화...');
           // 기본 설정으로 초기화
           await setDoc(settingsDoc, {
             ...defaultSettings,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp()
           });
-          setSettings(defaultSettings);
+          safeSetState(setSettings, defaultSettings);
         }
       } catch (err) {
         console.error('설정 로드 중 오류:', err);
-        setError('설정을 불러오는 중 오류가 발생했습니다.');
+        safeSetState(setError, '설정을 불러오는 중 오류가 발생했습니다.');
       } finally {
-        setLoading(false);
+        console.log('설정 로딩 완료');
+        safeSetState(setLoading, false);
       }
     };
 
     initializeSettings();
-  }, []);
+  }, []); // safeSetState 의존성 제거
 
   return {
     settings,

@@ -11,9 +11,7 @@ import { ko } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Customer } from "@/hooks/use-customers";
 import { useOrders } from "@/hooks/use-orders";
-import { useBranches } from "@/hooks/use-branches";
 import { Order } from "@/hooks/use-orders";
-import { Branch } from "@/hooks/use-branches";
 interface StatementDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
@@ -21,7 +19,6 @@ interface StatementDialogProps {
 }
 interface StatementData {
   customer: Customer;
-  branch: Branch | null;
   period: {
     startDate: Date;
     endDate: Date;
@@ -37,7 +34,6 @@ interface StatementData {
 }
 export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDialogProps) {
   const { orders } = useOrders();
-  const { branches } = useBranches();
   const [startDate, setStartDate] = useState<Date | undefined>(undefined);
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [statementData, setStatementData] = useState<StatementData | null>(null);
@@ -47,8 +43,6 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
       setStatementData(null);
       return;
     }
-    // 고객의 담당지점 정보 찾기
-    const branch = branches.find(b => b.name === customer.branch);
     // 고객의 주문 내역 필터링 - 연락처로 매칭
     const customerOrders = orders.filter(order => {
       const orderDate = new Date(order.orderDate.seconds * 1000);
@@ -67,12 +61,11 @@ export function StatementDialog({ isOpen, onOpenChange, customer }: StatementDia
     };
     setStatementData({
       customer,
-      branch,
       period: { startDate, endDate },
       orders: customerOrders,
       summary
     });
-  }, [customer, startDate, endDate, orders, branches]);
+  }, [customer, startDate, endDate, orders]);
   const generateStatement = () => {
     if (!statementData) {
       return;

@@ -2,6 +2,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "@/context/auth-context";
 import { Toaster } from "@/components/ui/toaster";
+import { FaviconSetter } from "@/components/favicon-setter";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -26,6 +27,7 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased min-h-screen bg-background text-foreground">
         <AuthProvider>
+          <FaviconSetter />
           {children}
           <Toaster />
         </AuthProvider>

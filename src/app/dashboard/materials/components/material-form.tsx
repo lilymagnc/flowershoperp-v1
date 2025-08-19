@@ -23,7 +23,7 @@ import {
   DialogDescription
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useBranches } from "@/hooks/use-branches"
+
 import { useCategories } from "@/hooks/use-categories"
 import { useEffect, useMemo } from "react"
 const materialSchema = z.object({
@@ -34,7 +34,7 @@ const materialSchema = z.object({
   supplier: z.string().min(1, "공급업체를 선택해주세요."),
   size: z.string().min(1, "규격을 입력해주세요."),
   color: z.string().min(1, "색상을 입력해주세요."),
-  branch: z.string().min(1, "지점을 선택해주세요."),
+
   stock: z.coerce.number().min(0, "재고는 0 이상이어야 합니다.").default(0),
 })
 export type MaterialFormValues = z.infer<typeof materialSchema>
@@ -44,8 +44,7 @@ interface MaterialFormProps {
   onSubmit: (data: MaterialFormValues) => Promise<void>;
   material?: any;
   initialData?: any;
-  branches?: any[];
-  selectedBranch?: string;
+
 }
 const defaultValues: MaterialFormValues = {
   name: "",
@@ -55,13 +54,11 @@ const defaultValues: MaterialFormValues = {
   supplier: "",
   size: "",
   color: "",
-  branch: "",
+
   stock: 0,
 }
-export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initialData, branches: propBranches, selectedBranch }: MaterialFormProps) {
-  const { branches } = useBranches();
+export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initialData }: MaterialFormProps) {
   const { categories } = useCategories();
-  const availableBranches = propBranches || branches;
   // 카테고리 목록 생성
   const mainCategories = useMemo(() => {
     const mainCats = categories.filter(cat => cat.type === 'main').map(cat => cat.name);
@@ -212,26 +209,7 @@ export function MaterialForm({ isOpen, onOpenChange, onSubmit, material, initial
                 </FormItem>
               )}
             />
-             <FormField
-              control={form.control}
-              name="branch"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>소속 지점</FormLabel>
-                  <Select onValueChange={field.onChange} value={field.value} defaultValue={field.value}>
-                    <FormControl>
-                      <SelectTrigger><SelectValue placeholder="소속 지점 선택" /></SelectTrigger>
-                    </FormControl>
-                    <SelectContent>
-                      {branches.filter(b => b.type !== '본사').map(branch => (
-                        <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+
              {material && (
               <FormField
                 control={form.control}

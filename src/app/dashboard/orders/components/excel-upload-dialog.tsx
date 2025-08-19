@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useOrders } from "@/hooks/use-orders";
-import { useBranches } from "@/hooks/use-branches";
+
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, XCircle, Download } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Timestamp } from "firebase/firestore";
@@ -17,7 +17,6 @@ interface ExcelUploadDialogProps {
 }
 interface ExcelOrderData {
   orderDate: string;
-  branchName: string;
   orderItems: string;
   itemPrice: number;
   deliveryFee: number;
@@ -50,7 +49,6 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const { toast } = useToast();
   const { addOrder } = useOrders();
-  const { branches } = useBranches();
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
@@ -72,32 +70,31 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
     // 첫 번째 행은 헤더이므로 건너뛰기
     for (let i = 1; i < data.length; i++) {
       const row = data[i];
-      if (row.length < 20) continue; // 최소 20개 컬럼이 있어야 함
+      if (row.length < 19) continue; // 최소 19개 컬럼이 있어야 함
       try {
         const order: ExcelOrderData = {
           orderDate: row[0] || '',
-          branchName: row[1] || '',
-          orderItems: row[2] || '',
-          itemPrice: Number(row[3]) || 0,
-          deliveryFee: Number(row[4]) || 0,
-          paymentMethod: row[5] || '',
-          totalAmount: Number(row[6]) || 0,
-          orderStatus: row[7] || 'processing',
-          paymentStatus: row[8] || 'pending',
-          ordererName: row[9] || '',
-          ordererContact: row[10] || '',
-          ordererEmail: row[11] || '',
-          deliveryMethod: row[12] || 'pickup',
-          pickupDate: row[13] || '',
-          recipientName: row[14] || '',
-          recipientContact: row[15] || '',
-          deliveryAddress: row[16] || '',
-          messageType: row[17] || 'none',
-          messageContent: row[18] || '',
-          specialRequests: row[19] || '',
+          orderItems: row[1] || '',
+          itemPrice: Number(row[2]) || 0,
+          deliveryFee: Number(row[3]) || 0,
+          paymentMethod: row[4] || '',
+          totalAmount: Number(row[5]) || 0,
+          orderStatus: row[6] || 'processing',
+          paymentStatus: row[7] || 'pending',
+          ordererName: row[8] || '',
+          ordererContact: row[9] || '',
+          ordererEmail: row[10] || '',
+          deliveryMethod: row[11] || 'pickup',
+          pickupDate: row[12] || '',
+          recipientName: row[13] || '',
+          recipientContact: row[14] || '',
+          deliveryAddress: row[15] || '',
+          messageType: row[16] || 'none',
+          messageContent: row[17] || '',
+          specialRequests: row[18] || '',
         };
         // 필수 필드 검증
-        if (order.ordererName && order.branchName) {
+        if (order.ordererName) {
           orders.push(order);
         }
       } catch (error) {
@@ -114,7 +111,7 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
     }));
     const order = {
       orderDate: Timestamp.fromDate(new Date(excelData.orderDate)),
-      branchName: excelData.branchName,
+      branchName: "메인 매장",
       items: orderItems,
       summary: {
         subtotal: excelData.itemPrice,
@@ -240,8 +237,8 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
   const downloadTemplate = () => {
     const template = [
       // === 기본 정보 (업로드/다운로드 공통) ===
-      ['주문일시', '지점명', '주문상품', '상품금액', '배송비', '결제수단', '총금액', '주문상태', '결제상태', '주문자명', '주문자연락처', '주문자이메일', '수령방법', '픽업/배송일시', '수령인명', '수령인연락처', '배송주소', '메세지타입', '메세지내용', '요청사항'],
-      ['2024-01-15 14:30', '강남점', '장미 10송이', '50000', '3000', '카드', '53000', 'processing', 'pending', '김철수', '010-1234-5678', 'kim@example.com', 'pickup', '2024-01-16 15:00', '', '', '', 'card', '생일 축하해요!', '']
+      ['주문일시', '주문상품', '상품금액', '배송비', '결제수단', '총금액', '주문상태', '결제상태', '주문자명', '주문자연락처', '주문자이메일', '수령방법', '픽업/배송일시', '수령인명', '수령인연락처', '배송주소', '메세지타입', '메세지내용', '요청사항'],
+      ['2024-01-15 14:30', '장미 10송이', '50000', '3000', '카드', '53000', 'processing', 'pending', '김철수', '010-1234-5678', 'kim@example.com', 'pickup', '2024-01-16 15:00', '', '', '', 'card', '생일 축하해요!', '']
     ];
     const ws = XLSX.utils.aoa_to_sheet(template);
     const wb = XLSX.utils.book_new();

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from "next/navigation";
 import {
   AlertDialog,
@@ -35,29 +35,76 @@ import {
   Type,
   Percent,
   Trash2,
-  AlertTriangle
+  AlertTriangle,
+  Image,
+  Upload
 } from "lucide-react";
 import { useSettings, defaultSettings } from "@/hooks/use-settings";
 import { useDataCleanup } from "@/hooks/use-data-cleanup";
 import BackupManagement from "./components/backup-management";
+import { Progress } from "@/components/ui/progress";
+
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') || 'general';
   const [activeTab, setActiveTab] = useState<string>(initialTab);
   const { settings, loading, error, saveSettings } = useSettings();
   const [localSettings, setLocalSettings] = useState(settings);
+  
+  // 디버깅용 로그
+  React.useEffect(() => {
+    console.log('설정 페이지 - 로딩 상태:', loading);
+    console.log('설정 페이지 - 오류:', error);
+    console.log('설정 페이지 - 설정 데이터:', settings);
+  }, [loading, error, settings]);
   const [saving, setSaving] = useState(false);
   const [newFont, setNewFont] = useState('');
   const { toast } = useToast();
   const { user } = useAuth();
-  const { isHQManager } = useUserRole();
+  // 개발 단계에서는 권한 체크 제거
+  // const { isHQManager } = useUserRole();
+  const isHQManager = () => true; // 개발 단계에서는 모든 권한 허용
   const { loading: cleanupLoading, progress, cleanupAllData, cleanupSpecificData } = useDataCleanup();
   const [selectedDataType, setSelectedDataType] = useState<string>('');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  
+  // 컴포넌트 마운트 상태 추적
+  const isMountedRef = useRef(true);
+  const fileReaderRef = useRef<FileReader | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // 컴포넌트 언마운트 시 cleanup
+  useEffect(() => {
+    isMountedRef.current = true;
+    abortControllerRef.current = new AbortController();
+    
+    return () => {
+      isMountedRef.current = false;
+      // FileReader 정리
+      if (fileReaderRef.current) {
+        fileReaderRef.current.abort();
+        fileReaderRef.current = null;
+      }
+      // AbortController 정리
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
+
+  // 안전한 상태 업데이트 함수
+  const safeSetState = useCallback((setter: React.Dispatch<React.SetStateAction<any>>, value: any) => {
+    if (isMountedRef.current) {
+      setter(value);
+    }
+  }, []);
+
   const handleSpecificDataCleanup = (dataType: string) => {
     setSelectedDataType(dataType);
     setShowConfirmDialog(true);
   };
+
   const confirmSpecificDataCleanup = () => {
     if (selectedDataType) {
       cleanupSpecificData(selectedDataType);
@@ -65,6 +112,7 @@ export default function SettingsPage() {
       setSelectedDataType('');
     }
   };
+
   const getDataTypeName = (dataType: string): string => {
     const dataTypeNames: { [key: string]: string } = {
       'orders': '주문',
@@ -80,22 +128,26 @@ export default function SettingsPage() {
     };
     return dataTypeNames[dataType] || dataType;
   };
+
   // settings가 로드되었을 때만 localSettings 업데이트
   useEffect(() => {
-    if (!loading && settings !== defaultSettings) {
+    if (!loading && settings !== defaultSettings && isMountedRef.current) {
       setLocalSettings(settings);
     }
   }, [settings, loading]);
+
   const handleSaveSettings = async () => {
+    if (!isMountedRef.current) return;
+    
     try {
       setSaving(true);
       const success = await saveSettings(localSettings);
-      if (success) {
+      if (success && isMountedRef.current) {
         toast({
           title: '성공',
           description: '설정이 저장되었습니다.'
         });
-      } else {
+      } else if (isMountedRef.current) {
         toast({
           variant: 'destructive',
           title: '오류',
@@ -104,24 +156,32 @@ export default function SettingsPage() {
       }
     } catch (error) {
       console.error('설정 저장 중 오류:', error);
-      toast({
-        variant: 'destructive',
-        title: '오류',
-        description: '설정 저장 중 오류가 발생했습니다.'
-      });
+      if (isMountedRef.current) {
+        toast({
+          variant: 'destructive',
+          title: '오류',
+          description: '설정 저장 중 오류가 발생했습니다.'
+        });
+      }
     } finally {
-      setSaving(false);
+      if (isMountedRef.current) {
+        setSaving(false);
+      }
     }
   };
+
   const resetToDefaults = () => {
-    setLocalSettings(settings);
-    toast({
-      title: '초기화 완료',
-      description: '설정이 기본값으로 초기화되었습니다.'
-    });
+    if (isMountedRef.current) {
+      setLocalSettings(settings);
+      toast({
+        title: '초기화 완료',
+        description: '설정이 기본값으로 초기화되었습니다.'
+      });
+    }
   };
+
   const addNewFont = () => {
-    if (!newFont.trim()) return;
+    if (!newFont.trim() || !isMountedRef.current) return;
     const fontName = newFont.trim();
     const currentFonts = localSettings.availableFonts || [];
     if (currentFonts.includes(fontName)) {
@@ -132,7 +192,7 @@ export default function SettingsPage() {
       });
       return;
     }
-    setLocalSettings(prev => ({
+    safeSetState(setLocalSettings, prev => ({
       ...prev,
       availableFonts: [...currentFonts, fontName]
     }));
@@ -142,6 +202,96 @@ export default function SettingsPage() {
       description: `폰트 "${fontName}"가 추가되었습니다.`
     });
   };
+
+  // 안전한 파일 업로드 핸들러
+  const handleLogoUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !isMountedRef.current) return;
+
+    // 파일 크기 제한 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: '파일 크기 오류',
+        description: '파일 크기는 5MB 이하여야 합니다.'
+      });
+      return;
+    }
+
+    // 이전 FileReader 정리
+    if (fileReaderRef.current) {
+      fileReaderRef.current.abort();
+    }
+
+    const reader = new FileReader();
+    fileReaderRef.current = reader;
+
+    reader.onload = (e) => {
+      if (e.target?.result && isMountedRef.current) {
+        safeSetState(setLocalSettings, prev => ({ 
+          ...prev, 
+          logoUrl: e.target.result as string 
+        }));
+      }
+    };
+
+    reader.onerror = () => {
+      if (isMountedRef.current) {
+        toast({
+          variant: 'destructive',
+          title: '파일 읽기 오류',
+          description: '파일을 읽는 중 오류가 발생했습니다.'
+        });
+      }
+    };
+
+    reader.readAsDataURL(file);
+  }, [toast, safeSetState]);
+
+  const handleFaviconUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !isMountedRef.current) return;
+
+    // 파일 크기 제한 (1MB)
+    if (file.size > 1 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: '파일 크기 오류',
+        description: '파비콘 파일 크기는 1MB 이하여야 합니다.'
+      });
+      return;
+    }
+
+    // 이전 FileReader 정리
+    if (fileReaderRef.current) {
+      fileReaderRef.current.abort();
+    }
+
+    const reader = new FileReader();
+    fileReaderRef.current = reader;
+
+    reader.onload = (e) => {
+      if (e.target?.result && isMountedRef.current) {
+        safeSetState(setLocalSettings, prev => ({ 
+          ...prev, 
+          faviconUrl: e.target.result as string 
+        }));
+      }
+    };
+
+    reader.onerror = () => {
+      if (isMountedRef.current) {
+        toast({
+          variant: 'destructive',
+          title: '파일 읽기 오류',
+          description: '파일을 읽는 중 오류가 발생했습니다.'
+        });
+      }
+    };
+
+    reader.readAsDataURL(file);
+  }, [toast, safeSetState]);
+
   // 본사 관리자가 아니면 접근 제한
   if (!isHQManager()) {
     return (
@@ -154,6 +304,7 @@ export default function SettingsPage() {
       </div>
     );
   }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -164,15 +315,17 @@ export default function SettingsPage() {
       </div>
     );
   }
+
   return (
     <div className="space-y-6">
       <PageHeader
         title="시스템 설정"
         description="시스템의 기본 설정을 관리합니다."
       />
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-9">
+      <Tabs key={activeTab} value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <TabsList className="grid w-full grid-cols-10">
           <TabsTrigger value="general">일반 설정</TabsTrigger>
+          <TabsTrigger value="branding">브랜딩</TabsTrigger>
           <TabsTrigger value="delivery">배송 설정</TabsTrigger>
           <TabsTrigger value="notifications">알림 설정</TabsTrigger>
           <TabsTrigger value="messages">메시지 설정</TabsTrigger>
@@ -182,6 +335,7 @@ export default function SettingsPage() {
           <TabsTrigger value="backup">백업 관리</TabsTrigger>
           <TabsTrigger value="data-cleanup">데이터 초기화</TabsTrigger>
         </TabsList>
+
         {/* 일반 설정 */}
         <TabsContent value="general" className="space-y-4">
           <Card>
@@ -199,6 +353,15 @@ export default function SettingsPage() {
                     id="siteName"
                     value={localSettings.siteName}
                     onChange={(e) => setLocalSettings(prev => ({ ...prev, siteName: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="flowerShopName">플라워샵 이름</Label>
+                  <Input
+                    id="flowerShopName"
+                    value={localSettings.flowerShopName}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, flowerShopName: e.target.value }))}
+                    placeholder="예: 릴리맥 플라워"
                   />
                 </div>
                 <div className="space-y-2">
@@ -224,6 +387,15 @@ export default function SettingsPage() {
                     id="contactPhone"
                     value={localSettings.contactPhone}
                     onChange={(e) => setLocalSettings(prev => ({ ...prev, contactPhone: e.target.value }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="shopAddress">샵 주소</Label>
+                  <Input
+                    id="shopAddress"
+                    value={localSettings.shopAddress}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, shopAddress: e.target.value }))}
+                    placeholder="예: 서울시 강남구 테헤란로 123"
                   />
                 </div>
               </div>
@@ -272,6 +444,143 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* 브랜딩 설정 */}
+        <TabsContent value="branding" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Image className="h-5 w-5" />
+                로고 설정
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>메인 로고</Label>
+                    <p className="text-sm text-gray-500">사이드바와 주문서에 표시되는 로고 (권장: 300x80px)</p>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleLogoUpload}
+                        className="hidden"
+                        id="logo-upload"
+                      />
+                      <label htmlFor="logo-upload" className="cursor-pointer">
+                        <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                        <p className="text-sm text-gray-600">로고 업로드</p>
+                      </label>
+                    </div>
+                    {localSettings.logoUrl && (
+                      <div className="mt-2">
+                        <img 
+                          src={localSettings.logoUrl} 
+                          alt="로고 미리보기" 
+                          className="max-w-full h-20 object-contain border rounded"
+                          onError={() => {
+                            console.error('로고 이미지 로딩 실패');
+                          }}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => safeSetState(setLocalSettings, prev => ({ ...prev, logoUrl: '' }))}
+                          className="mt-2"
+                        >
+                          로고 제거
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>파비콘</Label>
+                    <p className="text-sm text-gray-500">브라우저 탭에 표시되는 아이콘 (권장: 32x32px)</p>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFaviconUpload}
+                        className="hidden"
+                        id="favicon-upload"
+                      />
+                      <label htmlFor="favicon-upload" className="cursor-pointer">
+                        <Upload className="mx-auto h-8 w-8 text-gray-400 mb-2" />
+                        <p className="text-sm text-gray-600">파비콘 업로드</p>
+                      </label>
+                    </div>
+                    {localSettings.faviconUrl && (
+                      <div className="mt-2">
+                        <img 
+                          src={localSettings.faviconUrl} 
+                          alt="파비콘 미리보기" 
+                          className="w-8 h-8 object-contain border rounded"
+                          onError={() => {
+                            console.error('파비콘 이미지 로딩 실패');
+                          }}
+                        />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => safeSetState(setLocalSettings, prev => ({ ...prev, faviconUrl: '' }))}
+                          className="mt-2"
+                        >
+                          파비콘 제거
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <div className="pt-4 border-t">
+                <div className="space-y-2">
+                  <Label>브랜드 색상</Label>
+                  <p className="text-sm text-gray-500">주요 UI 요소에 사용될 브랜드 색상</p>
+                  <div className="flex gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="primaryColor">주 색상</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="primaryColor"
+                          type="color"
+                          value={localSettings.primaryColor}
+                          onChange={(e) => setLocalSettings(prev => ({ ...prev, primaryColor: e.target.value }))}
+                          className="w-16 h-10"
+                        />
+                        <Input
+                          value={localSettings.primaryColor}
+                          onChange={(e) => setLocalSettings(prev => ({ ...prev, primaryColor: e.target.value }))}
+                          placeholder="#000000"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="secondaryColor">보조 색상</Label>
+                      <div className="flex gap-2">
+                        <Input
+                          id="secondaryColor"
+                          type="color"
+                          value={localSettings.secondaryColor}
+                          onChange={(e) => setLocalSettings(prev => ({ ...prev, secondaryColor: e.target.value }))}
+                          className="w-16 h-10"
+                        />
+                        <Input
+                          value={localSettings.secondaryColor}
+                          onChange={(e) => setLocalSettings(prev => ({ ...prev, secondaryColor: e.target.value }))}
+                          placeholder="#666666"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* 배송 설정 */}
         <TabsContent value="delivery" className="space-y-4">
           <Card>
@@ -307,6 +616,7 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
         {/* 알림 설정 */}
         <TabsContent value="notifications" className="space-y-4">
           <Card>

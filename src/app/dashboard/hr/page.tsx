@@ -8,7 +8,7 @@ import { ImportButton } from "@/components/import-button";
 import { EmployeeTable } from "./components/employee-table";
 import { EmployeeForm, EmployeeFormValues } from "./components/employee-form";
 import { useEmployees, Employee } from "@/hooks/use-employees";
-import { useBranches } from "@/hooks/use-branches";
+
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -18,9 +18,8 @@ export default function HrPage() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const { employees, loading, addEmployee, updateEmployee, deleteEmployee, bulkAddEmployees } = useEmployees();
-  const { branches } = useBranches();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState("all");
+  const [selectedDepartment, setSelectedDepartment] = useState("all");
   const [selectedPosition, setSelectedPosition] = useState("all");
   // 기존 직원들의 직위를 가져와서 필터 옵션에 추가
   const existingPositions = useMemo(() => [...new Set(employees.map(e => e.position))], [employees]);
@@ -31,10 +30,10 @@ export default function HrPage() {
   }, [existingPositions]);
   const filteredEmployees = useMemo(() => {
     return employees
-      .filter(emp => (selectedBranch === "all" || emp.department === selectedBranch))
+      .filter(emp => (selectedDepartment === "all" || emp.department === selectedDepartment))
       .filter(emp => (selectedPosition === "all" || emp.position === selectedPosition))
       .filter(emp => String(emp.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) || String(emp.email ?? '').toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [employees, searchTerm, selectedBranch, selectedPosition]);
+  }, [employees, searchTerm, selectedDepartment, selectedPosition]);
   const handleAdd = () => {
     setSelectedEmployee(null);
     setIsFormOpen(true);
@@ -87,15 +86,15 @@ export default function HrPage() {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
-            <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+            <Select value={selectedDepartment} onValueChange={setSelectedDepartment}>
               <SelectTrigger className="w-full sm:w-[180px]">
-                <SelectValue placeholder="소속 지점" />
+                <SelectValue placeholder="소속 부서" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">모든 지점</SelectItem>
-                {branches.map(branch => (
-                  <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
-                ))}
+                <SelectItem value="all">모든 부서</SelectItem>
+                <SelectItem value="매장">매장</SelectItem>
+                <SelectItem value="사무실">사무실</SelectItem>
+                <SelectItem value="창고">창고</SelectItem>
               </SelectContent>
             </Select>
             <Select value={selectedPosition} onValueChange={setSelectedPosition}>

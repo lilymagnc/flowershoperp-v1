@@ -60,8 +60,6 @@ export interface ActualPurchaseInfo {
 export interface MaterialRequest {
   id: string;
   requestNumber: string; // REQ-2024-001
-  branchId: string;
-  branchName: string;
   requesterId: string;
   requesterName: string;
   requestedItems: RequestItem[];
@@ -85,7 +83,7 @@ export interface PurchaseBatch {
   // 실제 구매 내역
   purchasedItems: ActualPurchaseItem[];
   totalCost: number;
-  // 지점별 배송 계획
+  // 배송 계획
   deliveryPlan: DeliveryPlanItem[];
   status: 'planning' | 'purchasing' | 'completed';
   notes: string;
@@ -120,8 +118,6 @@ export enum Priority {
 }
 // 배송 계획 품목
 export interface DeliveryPlanItem {
-  branchId: string;
-  branchName: string;
   items: ActualPurchaseItem[];
   estimatedCost: number;
 }
@@ -133,15 +129,15 @@ export interface ConsolidatedItem {
   currentPrice: number;
   supplier: string;
   totalQuantity: number;
-  requestingBranches: BranchRequestSummary[];
+  requestingDepartments: DepartmentRequestSummary[];
   estimatedTotalCost: number;
   hasUrgent: boolean;
   priority: Priority;
 }
-// 지점별 요청 요약
-export interface BranchRequestSummary {
-  branchId: string;
-  branchName: string;
+// 부서별 요청 요약
+export interface DepartmentRequestSummary {
+  departmentId: string;
+  departmentName: string;
   quantity: number;
   urgency: UrgencyLevel;
   requestIds: string[];
@@ -149,8 +145,6 @@ export interface BranchRequestSummary {
 }
 // 요청 생성 데이터
 export interface CreateMaterialRequestData {
-  branchId: string;
-  branchName: string;
   requesterId: string;
   requesterName: string;
   requestedItems: RequestItem[];
@@ -223,7 +217,7 @@ export interface MaterialRequestNotification {
   title: string;
   message: string;
   userId?: string;
-  branchId?: string;
+  departmentId?: string;
   role?: string;
   relatedRequestId?: string;
   relatedBatchId?: string;
@@ -272,7 +266,7 @@ export interface PurchaseBatchListResponse {
 }
 // 필터 및 정렬 옵션
 export interface MaterialRequestFilters {
-  branchId?: string;
+  departmentId?: string;
   status?: RequestStatus;
   urgency?: UrgencyLevel;
   dateFrom?: Date;
@@ -290,9 +284,9 @@ export interface MaterialRequestStats {
   totalCost: number;
   averageProcessingTime: number; // 시간 (시간 단위)
 }
-export interface BranchRequestStats {
-  branchId: string;
-  branchName: string;
+export interface DepartmentRequestStats {
+  departmentId: string;
+  departmentName: string;
   totalRequests: number;
   totalCost: number;
   averageUrgency: number; // 0-1 (긴급 요청 비율)
@@ -355,12 +349,6 @@ export const canTransitionTo = (
 export const validateMaterialRequest = (
   request: CreateMaterialRequestData
 ): MaterialRequestError | null => {
-  if (!request.branchId || !request.branchName) {
-    return {
-      code: 'INVALID_BRANCH',
-      message: '지점 정보가 필요합니다.'
-    };
-  }
   if (!request.requesterId || !request.requesterName) {
     return {
       code: 'INVALID_REQUESTER',

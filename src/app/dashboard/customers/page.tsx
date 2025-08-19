@@ -16,7 +16,6 @@ import { CustomerDetailDialog } from "./components/customer-detail-dialog";
 import { StatementDialog } from "./components/statement-dialog";
 import { ImportButton } from "@/components/import-button";
 import { FileUp, Download } from "lucide-react";
-import { useBranches } from "@/hooks/use-branches";
 import { useAuth } from "@/hooks/use-auth";
 import { downloadXLSX } from "@/lib/utils";
 import { format } from "date-fns";
@@ -27,32 +26,14 @@ export default function CustomersPage() {
     const [isStatementOpen, setIsStatementOpen] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
     const [searchTerm, setSearchTerm] = useState("");
-    const [selectedBranch, setSelectedBranch] = useState("all");
     const [selectedType, setSelectedType] = useState("all");
     const [selectedGrade, setSelectedGrade] = useState("all");
     const { customers, loading, addCustomer, updateCustomer, deleteCustomer, bulkAddCustomers } = useCustomers();
-    const { branches } = useBranches();
     const { user } = useAuth();
-    const isHeadOfficeAdmin = user?.role === '본사 관리자';
-    const userBranch = user?.franchise;
     const customerGrades = useMemo(() => [...new Set(customers.map(c => c.grade || "신규"))], [customers]);
     const filteredCustomers = useMemo(() => {
         let filtered = customers;
-        // 권한에 따른 지점 필터링 (통합 관리 시스템)
-        if (!isHeadOfficeAdmin && userBranch) {
-            // 일반 사용자는 자신의 지점에 등록된 고객만 보기
-            filtered = filtered.filter(customer => 
-                customer.branch === userBranch || 
-                (customer.branches && customer.branches[userBranch])
-            );
-        } else if (selectedBranch !== "all") {
-            // 본사 관리자는 선택한 지점에 등록된 고객만 보기
-            filtered = filtered.filter(customer => 
-                customer.branch === selectedBranch || 
-                (customer.branches && customer.branches[selectedBranch])
-            );
-        }
-        // 검색어 필터링 (전 지점 검색)
+        // 검색어 필터링
         filtered = filtered.filter(customer => 
             String(customer.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
             String(customer.contact ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -66,7 +47,7 @@ export default function CustomersPage() {
             filtered = filtered.filter(customer => (customer.grade || "신규") === selectedGrade);
         }
         return filtered;
-    }, [customers, searchTerm, selectedBranch, selectedType, selectedGrade, isHeadOfficeAdmin, userBranch]);
+    }, [customers, searchTerm, selectedType, selectedGrade]);
     const handleAdd = () => {
         setSelectedCustomer(null);
         setIsFormOpen(true);
@@ -101,7 +82,7 @@ export default function CustomersPage() {
         await deleteCustomer(id);
     };
     const handleImport = async (data: any[]) => {
-      await bulkAddCustomers(data, selectedBranch);
+      await bulkAddCustomers(data);
     };
     const handleExport = () => {
         if (filteredCustomers.length === 0) {
@@ -120,7 +101,6 @@ export default function CustomersPage() {
             '이메일': customer.email || '',
             '주소': customer.address || '',
             '고객등급': customer.grade || '신규',
-            '담당지점': customer.branch,
             '메모': customer.memo || '',
             '등록일': customer.createdAt ? format(new Date(customer.createdAt), 'yyyy-MM-dd HH:mm') : '',
         }));
@@ -166,17 +146,6 @@ export default function CustomersPage() {
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         </div>
-                        <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                            <SelectTrigger className="w-full sm:w-[160px]">
-                                <SelectValue placeholder="담당 지점" />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectItem value="all">모든 지점</SelectItem>
-                                {branches.filter(b => b.type !== '본사').map(branch => (
-                                    <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
                          <Select value={selectedType} onValueChange={setSelectedType}>
                             <SelectTrigger className="w-full sm:w-[120px]">
                                 <SelectValue placeholder="고객 유형" />

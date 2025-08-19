@@ -68,8 +68,9 @@ export function ExpenseList({
   const { user } = useAuth();
   const { toast } = useToast();
 
-  // 본사 관리자 여부 확인
-  const isHeadquartersAdmin = user?.role === '본사 관리자';
+  // 개발 단계에서는 권한 체크 제거
+  // const isHeadquartersAdmin = user?.role === '본사 관리자';
+  const isHeadquartersAdmin = true; // 개발 단계에서는 모든 권한 허용
 
   // 데이터 로드
   useEffect(() => {
