@@ -21,7 +21,7 @@ import { ExpenseList } from './components/expense-list';
 import { ExpenseCharts } from './components/expense-charts';
 import { useSimpleExpenses } from '@/hooks/use-simple-expenses';
 import { useAuth } from '@/hooks/use-auth';
-import { useBranches } from '@/hooks/use-branches';
+
 import { useUserRole } from '@/hooks/use-user-role';
 import { useEffect, useMemo } from 'react';
 import { 
@@ -32,7 +32,6 @@ import {
 export default function SimpleExpensesPage() {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [activeTab, setActiveTab] = useState('charts');
-  const [selectedBranchId, setSelectedBranchId] = useState<string>('all');
   const [selectedMonth, setSelectedMonth] = useState<string>('current');
   const [isMounted, setIsMounted] = useState(false);
   const [renderKey, setRenderKey] = useState(0);
@@ -41,14 +40,13 @@ export default function SimpleExpensesPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const { expenses, fetchExpenses, calculateStats } = useSimpleExpenses();
   const { user } = useAuth();
-  const { branches, loading: branchesLoading } = useBranches();
   
   // 엑셀 템플릿 다운로드 함수
   const handleDownloadTemplate = () => {
     const template = [
       {
         '날짜': '2024-12-06',
-        '지점명': '강남점',
+        '지점명': '메인매장',
         '구매처': 'ABC상사',
         '카테고리': '자재',
         '세부분류': '원단',
@@ -92,12 +90,6 @@ export default function SimpleExpensesPage() {
   // 데이터 업데이트 함수
   const updateEmptyBranchIds = async () => {
     try {
-      // 릴리맥광화문점의 branchId 찾기
-      const gwanghwamunBranch = branches.find(b => b.name === '릴리맥광화문점');
-      if (!gwanghwamunBranch) {
-        console.error('릴리맥광화문점을 찾을 수 없습니다.');
-        return;
-      }
       const { collection, getDocs, updateDoc, doc, query, where } = await import('firebase/firestore');
       const { db } = await import('@/lib/firebase');
       // 빈 branchId를 가진 지출 데이터 찾기
@@ -107,10 +99,10 @@ export default function SimpleExpensesPage() {
       if (snapshot.empty) {
         return;
       }
-      // 배치 업데이트
+              // 배치 업데이트 - 모든 빈 branchId를 메인매장으로 설정
       const batch = [];
       snapshot.docs.forEach((docSnapshot) => {
-        batch.push(updateDoc(docSnapshot.ref, { branchId: gwanghwamunBranch.id }));
+        batch.push(updateDoc(docSnapshot.ref, { branchId: 'lilymac-gwanghwamun' }));
       });
       await Promise.all(batch);
       // 데이터 새로고침
@@ -119,113 +111,19 @@ export default function SimpleExpensesPage() {
       console.error('데이터 업데이트 오류:', error);
     }
   };
-  
 
-  // 사용자가 볼 수 있는 지점 목록
-  const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 본사 관리자는 모든 지점을 볼 수 있음
-    } else {
-      return branches.filter(branch => branch.name === user?.franchise); // 지점 직원은 자신의 지점만
-    }
-  }, [branches, isAdmin, user?.franchise]);
-  // 자동 지점 필터링 (지점 직원은 자동으로 자신의 지점으로 설정)
-  useEffect(() => {
-    if (!isAdmin && user?.franchise && selectedBranchId === 'all') {
-      const userBranch = branches.find(b => b.name === user.franchise);
-      if (userBranch) {
-        setSelectedBranchId(userBranch.id);
-      }
-    }
-  }, [isAdmin, user?.franchise, selectedBranchId, branches]);
   // 성공 시 새로고침
   const handleSuccess = () => {
     setRefreshTrigger(prev => prev + 1);
-    // 전체 데이터 새로고침 (지점 필터 없이)
+    // 전체 데이터 새로고침
     fetchExpenses();
   };
-  // 지점 변경 처리
-  const handleBranchChange = useCallback((branchId: string) => {
-    if (!isMounted || isUpdating) return;
-    
-    // 이전 작업들 정리
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
-    
-    // 새로운 AbortController 생성
-    abortControllerRef.current = new AbortController();
-    
-    // 업데이트 상태 설정
-    setIsUpdating(true);
-    
-    // 상태 업데이트를 안전하게 처리
-    setSelectedBranchId(branchId);
-    setRenderKey(prev => prev + 1);
-    
-    // 데이터 로딩을 지연시켜 DOM 업데이트 충돌 방지
-    timeoutRef.current = setTimeout(() => {
-      if (!isMounted || abortControllerRef.current?.signal.aborted) return;
-      
-      try {
-        if (branchId === 'all') {
-          fetchExpenses(); // 전체 데이터 로드
-        } else {
-          // 본사 지점을 선택한 경우 본사 데이터만 로드
-          const selectedBranch = branches.find(b => b.id === branchId);
-          if (selectedBranch?.type === '본사') {
-            fetchExpenses({ branchId }); // 본사 지점 선택 시 본사 데이터만
-          } else {
-            fetchExpenses({ branchId }); // 일반 지점 선택 시 해당 지점만
-          }
-        }
-      } catch (error) {
-        if (!abortControllerRef.current?.signal.aborted) {
-          console.error('지점 변경 중 오류:', error);
-        }
-      } finally {
-        if (!abortControllerRef.current?.signal.aborted) {
-          setIsUpdating(false);
-        }
-        timeoutRef.current = null;
-      }
-    }, 200);
-  }, [isMounted, isUpdating, branches, fetchExpenses]);
-  // 현재 선택된 지점 정보
-  let currentBranchId = selectedBranchId === 'all' ? '' : selectedBranchId;
-  let currentBranch = branches.find(b => b.id === currentBranchId);
-  
-  // 본사관리자인 경우 특별 처리
-  if (isHeadOfficeAdmin && selectedBranchId === 'all') {
-    // 본사관리자가 '전체'를 선택한 경우, 본사 지점을 기본값으로 설정
-    const headOfficeBranch = branches.find(b => b.type === '본사');
-    if (headOfficeBranch) {
-      currentBranchId = headOfficeBranch.id;
-      currentBranch = headOfficeBranch;
-    }
-  }
   
 
   // 필터링된 지출 데이터
   const filteredExpenses = useMemo(() => {
-    if (selectedBranchId === 'all') {
-      return expenses; // 전체 선택 시 모든 데이터 표시
-    }
-    // 본사 지점을 선택한 경우 본사 데이터만 표시 (빈 branchId도 포함)
-    const selectedBranch = branches.find(b => b.id === selectedBranchId);
-    if (selectedBranch?.type === '본사') {
-      return expenses.filter(expense => 
-        expense.branchId === selectedBranchId || 
-        !expense.branchId || 
-        expense.branchId === ''
-      );
-    }
-    return expenses.filter(expense => expense.branchId === selectedBranchId);
-  }, [expenses, selectedBranchId, branches]);
+    return expenses; // 전체 데이터 표시
+  }, [expenses]);
   // 이번 달 지출 계산 (현자 지점만)
   const thisMonthExpenses = filteredExpenses.filter(expense => {
     if (!expense.date) return false;
@@ -299,14 +197,7 @@ export default function SimpleExpensesPage() {
   useEffect(() => {
     if (!isMounted) return;
     
-    if (!isAdmin && user?.franchise) {
-      // 일반 사용자는 자신의 지점만
-      const userBranch = branches.find(b => b.name === user.franchise);
-      if (userBranch) {
-        setSelectedBranchId(userBranch.id);
-        fetchExpenses({ branchId: userBranch.id });
-      }
-    } else if (isAdmin && branches.length > 0) {
+    if (isAdmin) {
       // 관리자는 전체 데이터 로드
       fetchExpenses();
       // 본사 관리자인 경우 빈 branchId 데이터 자동 업데이트
@@ -315,7 +206,7 @@ export default function SimpleExpensesPage() {
       // 기본적으로 전체 데이터 로드
       fetchExpenses();
     }
-  }, [user, branches, isAdmin, fetchExpenses, isMounted]);
+  }, [user, isAdmin, fetchExpenses, isMounted]);
 
   return (
     <div className="container mx-auto p-6 space-y-6">
@@ -324,12 +215,11 @@ export default function SimpleExpensesPage() {
         <div>
           <h1 className="text-3xl font-bold">간편 지출 관리</h1>
           <p className="text-muted-foreground">
-            {selectedBranchId === 'all' ? '전체' : currentBranch?.name || '지점'}의 모든 지출을 쉽고 빠르게 관리하세요
+            전체 지출을 쉽고 빠르게 관리하세요
           </p>
         </div>
-        {/* 지점 선택 드롭다운 (관리자만) */}
+        {/* 월 선택 드롭다운 */}
         <div className="flex items-center gap-2">
-          {/* 월 선택 드롭다운 */}
           <Calendar className="h-4 w-4 text-muted-foreground" />
           <Select 
             key={`month-select-${selectedMonth}-${renderKey}-${isMounted}`}
@@ -353,41 +243,11 @@ export default function SimpleExpensesPage() {
               })}
             </SelectContent>
           </Select>
-          
-          {/* 지점 선택 드롭다운 (관리자만) */}
-          {isAdmin && isMounted && (
-            <>
-              <Building className="h-4 w-4 text-muted-foreground" />
-              <Select 
-                key={`branch-select-${selectedBranchId}-${renderKey}-${isMounted}`}
-                value={selectedBranchId} 
-                onValueChange={handleBranchChange} 
-                disabled={branchesLoading || isUpdating || !isMounted}
-              >
-                <SelectTrigger className="w-[200px] text-foreground">
-                  <SelectValue placeholder={branchesLoading ? "지점 데이터 로딩 중..." : "지점 선택"} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체</SelectItem>
-                  {branches.filter(branch => branch.type === '본사').map(branch => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                  {branches.filter(branch => branch.type !== '본사').map((branch) => (
-                    <SelectItem key={branch.id} value={branch.id}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </>
-          )}
         </div>
       </div>
       {/* 통계 카드 */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
-        {branchesLoading ? (
+        {isUpdating ? (
           // 로딩 중일 때 스켈레톤 표시
           <>
             <Card>
@@ -564,12 +424,12 @@ export default function SimpleExpensesPage() {
            )}
          </TabsList>
         <TabsContent value="input">
-          {branchesLoading ? (
+          {isUpdating ? (
             <Card className="w-full max-w-2xl mx-auto">
               <CardContent className="flex items-center justify-center p-8">
                 <div className="text-center">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-                  <p className="text-muted-foreground">지점 데이터를 불러오는 중입니다...</p>
+                  <p className="text-muted-foreground">데이터를 불러오는 중입니다...</p>
                 </div>
               </CardContent>
             </Card>
@@ -611,11 +471,9 @@ export default function SimpleExpensesPage() {
 
               {/* 기존 지출 입력 폼 */}
               <ExpenseInputForm 
-                key={`expense-form-${renderKey}-${currentBranchId}`}
+                key={`expense-form-${renderKey}`}
                 onSuccess={handleSuccess}
                 continueMode={true}
-                selectedBranchId={currentBranchId}
-                selectedBranchName={currentBranch?.name || ''}
               />
             </div>
           )}
@@ -628,17 +486,15 @@ export default function SimpleExpensesPage() {
         </TabsContent>
                  <TabsContent value="list">
            <ExpenseList 
-             key={`expense-list-${renderKey}-${selectedBranchId}`}
+             key={`expense-list-${renderKey}`}
              refreshTrigger={refreshTrigger} 
-             selectedBranchId={selectedBranchId === 'all' ? undefined : selectedBranchId}
            />
          </TabsContent>
          <TabsContent value="charts">
            <ExpenseCharts 
-             key={`expense-charts-${renderKey}-${selectedBranchId}-${selectedMonth}`}
+             key={`expense-charts-${renderKey}-${selectedMonth}`}
              expenses={filteredExpenses}
-             currentBranchName={currentBranch?.name || ''}
-             selectedBranchId={selectedBranchId === 'all' ? undefined : selectedBranchId}
+             currentBranchName="메인매장"
              selectedMonth={selectedMonth === 'all' || selectedMonth === 'current' ? undefined : selectedMonth}
            />
          </TabsContent>
@@ -646,7 +502,6 @@ export default function SimpleExpensesPage() {
            <TabsContent value="headquarters">
              <ExpenseList 
                refreshTrigger={refreshTrigger} 
-               selectedBranchId={selectedBranchId === 'all' ? undefined : selectedBranchId}
                isHeadquarters={true}
              />
            </TabsContent>

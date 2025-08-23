@@ -7,18 +7,16 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+
 import { useProducts } from "@/hooks/use-products";
-import { useBranches } from "@/hooks/use-branches";
-import { useAuth } from "@/hooks/use-auth";
 import { Product } from "@/hooks/use-products";
-import { Branch } from "@/hooks/use-branches";
 import { PageHeader } from "@/components/page-header";
 import { ImportButton } from "@/components/import-button";
 import { ProductForm } from "./components/product-form";
 import { ProductTable } from "./components/product-table";
 import { ProductStatsCards } from "./components/product-stats-cards";
 import { MultiPrintOptionsDialog } from "@/components/multi-print-options-dialog";
-import { ScanLine, Plus, Download } from "lucide-react";
+import { ScanLine, Plus, Download, Trash2, AlertTriangle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { exportProductsToExcel } from "@/lib/excel-export";
 
@@ -32,14 +30,10 @@ export default function ProductsPage() {
     deleteProduct, 
     bulkAddProducts,
     fetchProducts,
+    removeDuplicateProducts,
+    detectDuplicateProducts,
     // migrateProductIds 제거
   } = useProducts();
-  const { branches } = useBranches();
-  const { user } = useAuth();
-  const isAdmin = user?.role === '본사 관리자';
-  const userBranch = user?.franchise || "";
-
-  const [selectedBranch, setSelectedBranch] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -47,40 +41,25 @@ export default function ProductsPage() {
   const [selectedProducts, setSelectedProducts] = useState<string[]>([]);
   const [isMultiPrintDialogOpen, setIsMultiPrintDialogOpen] = useState(false);
 
-  // 사용자가 볼 수 있는 지점 목록
-  const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 본사 관리자는 모든 지점을 볼 수 있음
-    } else {
-      return branches.filter(branch => branch.name === userBranch); // 지점 직원은 자신의 지점만
-    }
-  }, [branches, isAdmin, userBranch]);
-
-  // 자동 지점 필터링 (지점 직원은 자동으로 자신의 지점으로 설정)
-  useEffect(() => {
-    if (!isAdmin && userBranch && selectedBranch === "all") {
-      setSelectedBranch(userBranch);
-    }
-  }, [isAdmin, userBranch, selectedBranch]);
-
   const filteredProducts = useMemo(() => {
-    let filtered = products;
+    // 중복 상품 필터링 (이름과 코드가 같은 상품 중 첫 번째만 유지)
+    const uniqueProducts = products.reduce((acc, product) => {
+      const key = `${product.name}_${product.code || ''}`;
+      if (!acc[key]) {
+        acc[key] = product;
+      }
+      return acc;
+    }, {} as Record<string, Product>);
 
-    // 지점 필터링 추가
-    if (selectedBranch !== "all") {
-      filtered = filtered.filter(product => product.branch === selectedBranch);
-    }
+    const uniqueProductsArray = Object.values(uniqueProducts);
 
-    // 검색어 및 카테고리 필터링
-    const finalFiltered = filtered.filter(product => {
+    return uniqueProductsArray.filter(product => {
       const matchesSearch = (product.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
                           (product.code?.toLowerCase() || '').includes(searchTerm.toLowerCase());
       const matchesCategory = !selectedCategory || selectedCategory === "all" || product.mainCategory === selectedCategory;
       return matchesSearch && matchesCategory;
     });
-
-    return finalFiltered;
-  }, [products, searchTerm, selectedBranch, selectedCategory, isAdmin, userBranch, user]);
+  }, [products, searchTerm, selectedCategory]);
 
   // 카테고리 목록 생성 (필터링된 상품 기준)
   const categories = useMemo(() => {
@@ -121,14 +100,9 @@ export default function ProductsPage() {
     setIsFormOpen(true);
   };
 
-  const handleRefresh = async () => {
-    await fetchProducts();
-  };
-
   const handleExportToExcel = async () => {
     try {
-      const branchText = !isAdmin ? userBranch : (selectedBranch === "all" ? "전체지점" : selectedBranch);
-      const filename = `상품목록_${branchText}`;
+      const filename = `상품목록_전체`;
       await exportProductsToExcel(filteredProducts, filename);
     } catch (error) {
       console.error('엑셀 내보내기 오류:', error);
@@ -138,24 +112,107 @@ export default function ProductsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader 
-        title="상품 관리" 
-        description={!isAdmin ? `${userBranch} 지점의 상품 정보를 관리합니다.` : "상품 정보를 관리합니다."}
-      >
-        <Button 
-          variant="outline"
-          onClick={() => router.push('/dashboard/barcode-scanner')}
-        >
-          <ScanLine className="mr-2 h-4 w-4" />
-          바코드 스캔
-        </Button>
+      <PageHeader title="상품 관리" description="상품을 추가, 수정, 삭제할 수 있습니다.">
+        <div className="flex gap-2">
+          <Button 
+            variant="outline"
+            onClick={() => router.push('/dashboard/barcode-scanner')}
+          >
+            <ScanLine className="mr-2 h-4 w-4" />
+            바코드 스캔
+          </Button>
+          <Button onClick={() => setIsFormOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            상품 추가
+          </Button>
+          <ImportButton
+            onImport={(data) => bulkAddProducts(data)}
+            fileName="products_template.xlsx"
+            resourceName="상품"
+          />
+          <Button 
+            variant="outline"
+            onClick={handleExportToExcel}
+            disabled={filteredProducts.length === 0}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            엑셀 내보내기
+          </Button>
+          {selectedProducts.length > 0 && (
+            <Button 
+              variant="outline" 
+              onClick={() => setIsMultiPrintDialogOpen(true)}
+            >
+              선택 상품 라벨 출력 ({selectedProducts.length}개)
+            </Button>
+          )}
+                     <Button 
+             variant="outline" 
+             onClick={async () => {
+               const duplicates = detectDuplicateProducts();
+               if (duplicates.length > 0) {
+                 const totalDuplicates = duplicates.reduce((sum, group) => sum + group.length - 1, 0);
+                 if (confirm(`기존 중복 상품이 ${duplicates.length}개 그룹에서 ${totalDuplicates}개 발견되었습니다. 중복 상품을 삭제하시겠습니까?`)) {
+                   await removeDuplicateProducts();
+                 }
+               } else {
+                 alert('중복된 상품이 없습니다.');
+               }
+             }}
+             className="border-orange-500 text-orange-600 hover:bg-orange-50 hover:text-orange-700"
+           >
+             <Trash2 className="mr-2 h-4 w-4" />
+             기존 중복 정리
+           </Button>
+        </div>
       </PageHeader>
+
+             {/* 중복 상품 알림 (기존 중복 상품이 있을 경우에만 표시) */}
+       {(() => {
+         const duplicates = detectDuplicateProducts();
+         if (duplicates.length > 0) {
+           const totalDuplicates = duplicates.reduce((sum, group) => sum + group.length - 1, 0);
+           return (
+             <Card className="border-orange-200 bg-orange-50">
+               <CardContent className="pt-6">
+                 <div className="flex items-center justify-between">
+                   <div className="flex items-center gap-2">
+                     <AlertTriangle className="h-5 w-5 text-orange-600" />
+                     <div>
+                       <p className="font-medium text-orange-800">
+                         기존 중복 상품 발견
+                       </p>
+                       <p className="text-sm text-orange-600">
+                         {duplicates.length}개 그룹에서 {totalDuplicates}개의 중복 상품이 발견되었습니다.
+                         <br />
+                         <span className="text-xs">새로 추가되는 상품은 중복 방지 기능이 적용됩니다.</span>
+                       </p>
+                     </div>
+                   </div>
+                   <Button 
+                     variant="outline" 
+                     size="sm"
+                     onClick={async () => {
+                       if (confirm(`기존 중복 상품 ${totalDuplicates}개를 삭제하시겠습니까?`)) {
+                         await removeDuplicateProducts();
+                       }
+                     }}
+                     className="border-orange-500 text-orange-600 hover:bg-orange-100"
+                   >
+                     <Trash2 className="mr-2 h-4 w-4" />
+                     중복 정리
+                   </Button>
+                 </div>
+               </CardContent>
+             </Card>
+           );
+         }
+         return null;
+       })()}
 
       {/* 상품 통계 카드 */}
       <ProductStatsCards 
         products={filteredProducts} 
-        selectedBranch={selectedBranch}
-        isAdmin={isAdmin}
       />
 
       <div className="flex flex-col sm:flex-row gap-4">
@@ -165,21 +222,6 @@ export default function ProductsPage() {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="flex-1"
         />
-        {isAdmin && (
-          <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-            <SelectTrigger className="w-48 text-foreground bg-background border border-input">
-              <SelectValue placeholder="지점 선택" className="text-foreground" />
-            </SelectTrigger>
-            <SelectContent className="bg-popover text-popover-foreground">
-              <SelectItem value="all" className="text-popover-foreground">모든 지점</SelectItem>
-              {availableBranches.map((branch) => (
-                <SelectItem key={branch.id} value={branch.name} className="text-popover-foreground">
-                  {branch.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        )}
         <Select value={selectedCategory} onValueChange={setSelectedCategory}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="카테고리 선택" />
@@ -195,58 +237,32 @@ export default function ProductsPage() {
         </Select>
       </div>
 
-      <PageHeader title="상품 관리" description="상품을 추가, 수정, 삭제할 수 있습니다.">
-        <div className="flex gap-2">
-          {isAdmin && (
-            <>
-              <Button onClick={() => setIsFormOpen(true)}>
-                <Plus className="mr-2 h-4 w-4" />
-                상품 추가
-              </Button>
-              {/* 마이그레이션 버튼 제거 */}
-                             <ImportButton
-                 onImport={(data) => bulkAddProducts(data, selectedBranch)}
-                 fileName="products_template.xlsx"
-                 resourceName="상품"
-               />
-              <Button 
-                variant="outline"
-                onClick={handleExportToExcel}
-                disabled={filteredProducts.length === 0}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                엑셀 내보내기
-              </Button>
-              {selectedProducts.length > 0 && (
-                <Button 
-                  variant="outline" 
-                  onClick={() => setIsMultiPrintDialogOpen(true)}
-                >
-                  선택 상품 라벨 출력 ({selectedProducts.length}개)
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-      </PageHeader>
-
-      <ProductTable
-        products={filteredProducts}
-        onSelectionChange={setSelectedProducts}
-        onEdit={handleEdit}
-        onDelete={deleteProduct}
-        selectedProducts={selectedProducts}
-        isAdmin={isAdmin}
-        onRefresh={handleRefresh} // 새로고침 함수 전달
-      />
+      {filteredProducts.length === 0 && !loading ? (
+        <Card>
+          <CardContent className="text-center py-8">
+            <p className="text-muted-foreground mb-4">표시할 상품이 없습니다.</p>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>총 상품 수: {products.length}</p>
+              <p>검색어: {searchTerm || "없음"}</p>
+              <p>카테고리: {selectedCategory === "all" ? "전체" : selectedCategory}</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <ProductTable
+          products={filteredProducts}
+          onSelectionChange={setSelectedProducts}
+          onEdit={handleEdit}
+          onDelete={deleteProduct}
+          selectedProducts={selectedProducts}
+        />
+      )}
 
       <ProductForm
         isOpen={isFormOpen}
         onOpenChange={setIsFormOpen}
         onSubmit={handleFormSubmit}
         product={editingProduct}
-        branches={availableBranches}
-        selectedBranch={!isAdmin ? userBranch : selectedBranch}
       />
 
       <MultiPrintOptionsDialog

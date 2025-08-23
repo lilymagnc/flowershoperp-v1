@@ -13,15 +13,17 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
-import { FileUp, Loader2 } from "lucide-react"
+import { FileUp, Loader2, Download } from "lucide-react"
 import * as XLSX from "xlsx";
+import { generateProductTemplate, generateMaterialTemplate } from "@/lib/excel-export";
 interface ImportDialogProps {
     isOpen: boolean
     onOpenChange: (isOpen: boolean) => void
     resourceName: string
     onImport: (data: any[]) => Promise<void>
+    fileName?: string
 }
-export function ImportDialog({ isOpen, onOpenChange, resourceName, onImport }: ImportDialogProps) {
+export function ImportDialog({ isOpen, onOpenChange, resourceName, onImport, fileName }: ImportDialogProps) {
     const { toast } = useToast();
     const [file, setFile] = useState<File | null>(null);
     const [isImporting, setIsImporting] = useState(false);
@@ -87,6 +89,21 @@ export function ImportDialog({ isOpen, onOpenChange, resourceName, onImport }: I
         }
         onOpenChange(open);
     }
+
+    const handleDownloadTemplate = () => {
+        if (fileName === 'products_template.xlsx') {
+            generateProductTemplate();
+        } else if (fileName === 'materials_template.xlsx') {
+            generateMaterialTemplate();
+        } else if (fileName) {
+            const link = document.createElement('a');
+            link.href = `/${fileName}`;
+            link.download = fileName;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    }
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[425px]">
@@ -97,6 +114,14 @@ export function ImportDialog({ isOpen, onOpenChange, resourceName, onImport }: I
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
+          {fileName && (
+            <div className="flex justify-end">
+              <Button variant="outline" size="sm" onClick={handleDownloadTemplate}>
+                <Download className="mr-2 h-4 w-4" />
+                템플릿 다운로드
+              </Button>
+            </div>
+          )}
           <div className="grid w-full items-center gap-1.5">
             <Label htmlFor="file">파일 선택</Label>
             <Input 

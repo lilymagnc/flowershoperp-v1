@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ArrowLeft, Printer, Loader2 } from "lucide-react";
 import { useRouter } from 'next/navigation';
 import { PrintableOrder, OrderPrintData } from '@/app/dashboard/orders/new/components/printable-order';
-import { useBranches } from '@/hooks/use-branches';
+
 import { useAuth } from '@/hooks/use-auth';
 import { PageHeader } from '@/components/page-header';
 import { format } from 'date-fns';
@@ -27,7 +27,7 @@ interface PrintPreviewClientProps {
 export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
     const router = useRouter();
     const { user, loading: authLoading } = useAuth();
-    const { branches, loading: branchesLoading } = useBranches();
+
     const [order, setOrder] = useState<SerializableOrder | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -74,7 +74,7 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
         }
     }, [orderId, user, authLoading]);
 
-    if (authLoading || loading || branchesLoading) {
+    if (authLoading || loading) {
         return (
             <div className="flex h-screen w-full items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -105,7 +105,7 @@ export function PrintPreviewClient({ orderId }: PrintPreviewClientProps) {
         );
     }
 
-    const targetBranch = branches.find(b => b.id === order.branchId);
+    const targetBranch = { name: '메인매장', id: 'main' };
     const itemsText = order.items.map(item => `${item.name} / ${item.quantity}개`).join('\n');
     const orderDateObject = new Date(order.orderDate);
     const printData: OrderPrintData | null = targetBranch ? {

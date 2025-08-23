@@ -20,12 +20,14 @@ import {
   CreateUserRoleData,
   ROLE_PERMISSIONS 
 } from '@/types/user-role';
+
 export function useUserRole() {
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
-  const { user } = useAuth(); // 실제 로그인한 사용자 정보 가져오기
-  // 사용자 역할 조회
+  const { user } = useAuth();
+
+  // 사용자 역할 조회 - 실제 Firestore에서 조회 (브랜치 관련 필드 제거)
   const fetchUserRole = useCallback(async () => {
     if (!user?.email) {
       setLoading(false);
@@ -33,131 +35,91 @@ export function useUserRole() {
     }
     try {
       setLoading(true);
-      // 1. 먼저 users 컬렉션에서 사용자 정보 확인
+      
+      // 1. users 컬렉션에서 사용자 정보 조회
       const userDocRef = doc(db, 'users', user.email);
-      const userDoc = await getDoc(userDocRef);
-      if (!userDoc.exists()) {
-        setLoading(false);
-        return;
-      }
-      const userData = userDoc.data();
-      // 2. userRoles 컬렉션에서 역할 정보 확인
-      const q = query(
-        collection(db, 'userRoles'),
-        where('email', '==', user.email),
+      const userDocSnap = await getDoc(userDocRef);
+      
+      // 2. userRoles 컬렉션에서 권한 정보 조회
+      const userRolesQuery = query(
+        collection(db, 'userRoles'), 
+        where('userId', '==', user.email),
         where('isActive', '==', true)
       );
-      const querySnapshot = await getDocs(q);
-      if (!querySnapshot.empty) {
-        const roleDoc = querySnapshot.docs[0];
-        const roleData = roleDoc.data();
-        // 기존 문서의 branchName이 "본사"이고 사용자가 본사 관리자가 아닌 경우 재생성
-        if (roleData.branchName === "본사" && userData.role !== "본사 관리자") {
-          // 기존 문서 삭제
-          await setDoc(doc(db, 'userRoles', roleDoc.id), { isActive: false });
-          // 올바른 지점 정보로 재생성
-          await createDefaultUserRole(user.email, userData.role);
-        } else {
-          const role: UserRole = {
-            id: roleDoc.id,
-            ...roleData,
-            createdAt: roleData.createdAt,
-            updatedAt: roleData.updatedAt,
-          } as UserRole;
-          setUserRole(role);
-        }
+      const userRolesSnap = await getDocs(userRolesQuery);
+      
+      let userRoleData: UserRole | null = null;
+      
+      if (userDocSnap.exists()) {
+        const userData = userDocSnap.data();
+        const role = userData.role || '직원';
+        
+        // 권한 코드를 UserRoleType으로 매핑 (단순화된 시스템)
+        let roleType = UserRoleType.SHOP_USER;
+        
+        userRoleData = {
+          id: user.email,
+          userId: user.email,
+          role: roleType,
+          permissions: ROLE_PERMISSIONS[roleType],
+          isActive: true,
+          createdAt: userData.createdAt || new Date() as any,
+          updatedAt: userData.updatedAt || new Date() as any
+        };
+      } else if (!userRolesSnap.empty) {
+        // userRoles에서 정보 가져오기
+        const roleData = userRolesSnap.docs[0].data();
+        userRoleData = {
+          id: roleData.id || user.email,
+          userId: user.email,
+          role: roleData.role || UserRoleType.SHOP_USER,
+          permissions: roleData.permissions || ROLE_PERMISSIONS[UserRoleType.SHOP_USER],
+          isActive: roleData.isActive !== false,
+          createdAt: roleData.createdAt || new Date() as any,
+          updatedAt: roleData.updatedAt || new Date() as any
+        };
       } else {
-        // userRoles에 없으면 users 컬렉션의 role을 기반으로 생성
-        await createDefaultUserRole(user.email, userData.role);
+        // 기본값 (새 사용자)
+        userRoleData = {
+          id: user.email,
+          userId: user.email,
+          role: UserRoleType.SHOP_USER,
+          permissions: ROLE_PERMISSIONS[UserRoleType.SHOP_USER],
+          isActive: true,
+          createdAt: new Date() as any,
+          updatedAt: new Date() as any
+        };
       }
+      
+      setUserRole(userRoleData);
+      setLoading(false);
     } catch (error) {
       console.error('사용자 역할 조회 오류:', error);
-      toast({
-        variant: 'destructive',
-        title: '역할 조회 실패',
-        description: '사용자 역할을 조회하는 중 오류가 발생했습니다.',
-      });
-    } finally {
       setLoading(false);
     }
-  }, [user, toast]);
-  // 기본 사용자 역할 생성 (기존 인증 시스템 역할 기반)
-  const createDefaultUserRole = async (email: string, existingRole: string) => {
+  }, [user?.email]);
+
+  // 사용자 역할 생성 - 단순화 (브랜치 관련 필드 제거)
+  const createUserRole = async (data: CreateUserRoleData): Promise<void> => {
     try {
-      // 기존 역할을 새로운 시스템에 맞게 매핑
-      const roleMapping = {
-        "본사 관리자": UserRoleType.HQ_MANAGER,
-        "가맹점 관리자": UserRoleType.BRANCH_MANAGER, 
-        "직원": UserRoleType.BRANCH_USER
-      };
-      const mappedRole = roleMapping[existingRole as keyof typeof roleMapping] || UserRoleType.BRANCH_USER;
-      // 권한 확인
-      const permissions = ROLE_PERMISSIONS[mappedRole];
-      if (!permissions) {
-        console.error('권한을 찾을 수 없음:', mappedRole);
-        return;
-      }
-      // 사용자의 실제 franchise 정보 가져오기
-      const userDocRef = doc(db, 'users', email);
-      const userDoc = await getDoc(userDocRef);
-      let branchName = "본사"; // 기본값
-      if (userDoc.exists()) {
-        const userData = userDoc.data();
-        branchName = userData.franchise || "본사";
-        }
-      const defaultRoleData: CreateUserRoleData = {
-        userId: email,
-        email: email,
-        role: mappedRole,
-        branchName: branchName, // 실제 지점 정보 사용
-      };
-      await createUserRole(defaultRoleData);
-    } catch (error) {
-      console.error('기본 역할 생성 오류:', error);
-    }
-  };
-  // 사용자 역할 생성
-  const createUserRole = async (roleData: CreateUserRoleData): Promise<string> => {
-    try {
-      const now = serverTimestamp();
-      // 권한 확인
-      const permissions = ROLE_PERMISSIONS[roleData.role];
-      if (!permissions) {
-        console.error('권한을 찾을 수 없음:', roleData.role);
-        throw new Error(`권한을 찾을 수 없음: ${roleData.role}`);
-      }
-      const userRoleDoc: any = {
-        userId: roleData.userId,
-        email: roleData.email,
-        role: roleData.role,
-        permissions: permissions,
-        createdAt: now as any,
-        updatedAt: now as any,
+      const roleData: Omit<UserRole, 'id' | 'createdAt' | 'updatedAt'> = {
+        userId: data.userId,
+        role: UserRoleType.SHOP_USER,
+        permissions: ROLE_PERMISSIONS[UserRoleType.SHOP_USER],
         isActive: true
       };
-      // branchId와 branchName이 있는 경우에만 추가 (undefined 방지)
-      if (roleData.branchId) {
-        userRoleDoc.branchId = roleData.branchId;
-      }
-      if (roleData.branchName) {
-        userRoleDoc.branchName = roleData.branchName;
-      }
-      const docRef = doc(collection(db, 'userRoles'));
-      await setDoc(docRef, userRoleDoc);
-      // 현재 사용자의 역할을 생성한 경우 상태 업데이트
-      if (roleData.email === user?.email) {
-        setUserRole({
-          id: docRef.id,
-          ...userRoleDoc,
-          createdAt: new Date() as any,
-          updatedAt: new Date() as any,
-        });
-      }
+
+      const docRef = doc(db, 'userRoles', data.userId);
+      await setDoc(docRef, {
+        ...roleData,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+
       toast({
         title: '역할 생성 완료',
         description: '사용자 역할이 성공적으로 생성되었습니다.',
       });
-      return docRef.id;
     } catch (error) {
       console.error('사용자 역할 생성 오류:', error);
       toast({
@@ -168,10 +130,11 @@ export function useUserRole() {
       throw error;
     }
   };
-  // 사용자 역할 업데이트
+
+  // 사용자 역할 업데이트 - 단순화 (브랜치 관련 필드 제거)
   const updateUserRole = async (
     roleId: string, 
-    updates: Partial<Pick<UserRole, 'role' | 'branchId' | 'branchName' | 'permissions' | 'isActive'>>
+    updates: Partial<Pick<UserRole, 'role' | 'permissions' | 'isActive'>>
   ): Promise<void> => {
     try {
       const docRef = doc(db, 'userRoles', roleId);
@@ -180,7 +143,7 @@ export function useUserRole() {
         updatedAt: serverTimestamp()
       };
       await setDoc(docRef, updateData, { merge: true });
-      // 현재 사용자의 역할을 업데이트한 경우 상태 업데이트
+      
       if (userRole && userRole.id === roleId) {
         setUserRole({
           ...userRole,
@@ -188,6 +151,7 @@ export function useUserRole() {
           updatedAt: new Date() as any,
         });
       }
+      
       toast({
         title: '역할 업데이트 완료',
         description: '사용자 역할이 성공적으로 업데이트되었습니다.',
@@ -202,36 +166,33 @@ export function useUserRole() {
       throw error;
     }
   };
-  // 권한 확인 함수들
+
+  // 권한 확인 함수들 - 항상 true 반환
   const hasPermission = (permission: Permission): boolean => {
-    if (!userRole || !userRole.isActive) return false;
-    return userRole.permissions.includes(permission);
+    return true; // 모든 권한 허용
   };
+
   const hasAnyPermission = (permissions: Permission[]): boolean => {
-    if (!userRole || !userRole.isActive) return false;
-    return permissions.some(permission => userRole.permissions.includes(permission));
+    return true; // 모든 권한 허용
   };
-  const isHQManager = (): boolean => {
-    return userRole?.role === 'hq_manager' && userRole.isActive;
-  };
-  const isBranchUser = (): boolean => {
-    return userRole?.role === 'branch_user' && userRole.isActive;
-  };
-  const isBranchManager = (): boolean => {
-    return userRole?.role === 'branch_manager' && userRole.isActive;
-  };
-  const isAdmin = (): boolean => {
-    return userRole?.role === 'admin' && userRole.isActive;
-  };
-  
-  // 본사 관리자 권한 확인 (hq_manager 또는 admin)
-  const isHeadOfficeAdmin = (): boolean => {
-    return (userRole?.role === 'hq_manager' || userRole?.role === 'admin') && userRole.isActive;
-  };
-  // 컴포넌트 마운트 시 사용자 역할 조회
+
+  const isHQManager = (): boolean => true;
+  const isHeadOfficeAdmin = (): boolean => true;
+  const isBranchUser = (): boolean => true;
+  const isBranchManager = (): boolean => true;
+  const isAdmin = (): boolean => true;
+
   useEffect(() => {
     fetchUserRole();
   }, [fetchUserRole]);
+
+  // 사용자 정보가 변경될 때마다 역할 정보 새로고침
+  useEffect(() => {
+    if (user?.email) {
+      fetchUserRole();
+    }
+  }, [user?.email, fetchUserRole]);
+
   return {
     userRole,
     loading,
@@ -241,9 +202,9 @@ export function useUserRole() {
     hasPermission,
     hasAnyPermission,
     isHQManager,
+    isHeadOfficeAdmin,
     isBranchUser,
     isBranchManager,
-    isAdmin,
-    isHeadOfficeAdmin,
+    isAdmin
   };
 }

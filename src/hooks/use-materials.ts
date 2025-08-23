@@ -11,13 +11,12 @@ import type { MaterialFormValues } from '@/app/dashboard/materials/components/ma
 export type Material = MaterialData;
 
 const initialMaterials: Omit<Material, 'docId' | 'status'>[] = [
-  { id: "M00001", name: "마르시아 장미", mainCategory: "생화", midCategory: "장미", price: 5000, supplier: "경부선꽃시장", stock: 100, size: "1단", color: "Pink", branch: "릴리맥광화문점" },
-  { id: "M00001", name: "마르시아 장미", mainCategory: "생화", midCategory: "장미", price: 5000, supplier: "경부선꽃시장", stock: 80, size: "1단", color: "Pink", branch: "릴리맥여의도점" },
-  { id: "M00002", name: "레드 카네이션", mainCategory: "생화", midCategory: "카네이션", price: 4500, supplier: "플라워팜", stock: 200, size: "1단", color: "Red", branch: "릴리맥여의도점" },
-  { id: "M00003", name: "몬스테라", mainCategory: "화분", midCategory: "관엽식물", price: 25000, supplier: "플라워팜", stock: 0, size: "대", color: "Green", branch: "릴리맥광화문점" },
-  { id: "M00004", name: "만천홍", mainCategory: "화분", midCategory: "난", price: 55000, supplier: "경부선꽃시장", stock: 30, size: "특", color: "Purple", branch: "릴리맥NC이스트폴점" },
-  { id: "M00005", name: "포장용 크라프트지", mainCategory: "기타자재", midCategory: "기타", price: 1000, supplier: "자재월드", stock: 15, size: "1롤", color: "Brown", branch: "릴리맥여의도점" },
-  { id: "M00006", name: "유칼립투스", mainCategory: "생화", midCategory: "기타", price: 3000, supplier: "플라워팜", stock: 50, size: "1단", color: "Green", branch: "릴리맥광화문점" },
+  { id: "M00001", name: "마르시아 장미", mainCategory: "생화", midCategory: "장미", price: 5000, supplier: "경부선꽃시장", stock: 100, size: "1단", color: "Pink" },
+  { id: "M00002", name: "레드 카네이션", mainCategory: "생화", midCategory: "카네이션", price: 4500, supplier: "플라워팜", stock: 200, size: "1단", color: "Red" },
+  { id: "M00003", name: "몬스테라", mainCategory: "화분", midCategory: "관엽식물", price: 25000, supplier: "플라워팜", stock: 0, size: "대", color: "Green" },
+  { id: "M00004", name: "만천홍", mainCategory: "화분", midCategory: "난", price: 55000, supplier: "경부선꽃시장", stock: 30, size: "특", color: "Purple" },
+  { id: "M00005", name: "포장용 크라프트지", mainCategory: "기타자재", midCategory: "기타", price: 1000, supplier: "자재월드", stock: 15, size: "1롤", color: "Brown" },
+  { id: "M00006", name: "유칼립투스", mainCategory: "생화", midCategory: "기타", price: 3000, supplier: "플라워팜", stock: 50, size: "1단", color: "Green" },
 ];
 
 export function useMaterials() {
@@ -26,8 +25,7 @@ export function useMaterials() {
   const { toast } = useToast();
 
   const getStatus = (stock: number): string => {
-      if (stock === 0) return 'out_of_stock';
-      if (stock < 10) return 'low_stock';
+      if (stock < 5) return 'low_stock';
       return 'active';
   }
 
@@ -176,13 +174,12 @@ export function useMaterials() {
         // 지점별로 구분하여 중복 체크
         const existingMaterialQuery = query(
             collection(db, "materials"), 
-            where("name", "==", data.name), 
-            where("branch", "==", data.branch)
+            where("name", "==", data.name)
         );
         const existingMaterialSnapshot = await getDocs(existingMaterialQuery);
 
         if (!existingMaterialSnapshot.empty) {
-            toast({ variant: 'destructive', title: '중복된 자재', description: `'${data.branch}' 지점에 동일한 이름의 자재가 이미 존재합니다.`});
+            toast({ variant: 'destructive', title: '중복된 자재', description: `동일한 이름의 자재가 이미 존재합니다.`});
             setLoading(false);
             return;
         }
@@ -191,7 +188,7 @@ export function useMaterials() {
         const docRef = doc(collection(db, "materials"));
         await setDoc(docRef, { ...data, id: newId });
 
-        toast({ title: "성공", description: `새 자재가 '${data.branch}' 지점에 추가되었습니다.`});
+        toast({ title: "성공", description: "새 자재가 추가되었습니다."});
         await fetchMaterials();
     } catch (error) {
         console.error("Error adding material:", error);
@@ -242,7 +239,7 @@ export function useMaterials() {
     for (const item of items) {
         try {
             await runTransaction(db, async (transaction) => {
-                const materialQuery = query(collection(db, "materials"), where("id", "==", item.id), where("branch", "==", branchName));
+                const materialQuery = query(collection(db, "materials"), where("id", "==", item.id));
                 const materialSnapshot = await getDocs(materialQuery);
 
                 if (materialSnapshot.empty) {
@@ -255,7 +252,6 @@ export function useMaterials() {
                         name: item.name,
                         mainCategory: '원재료',
                         midCategory: '기타',
-                        branch: branchName,
                         supplier: item.supplier || '',
                         price: item.price || 0,
                         stock: type === 'in' ? item.quantity : 0,
@@ -365,7 +361,7 @@ export function useMaterials() {
   ) => {
     try {
       await runTransaction(db, async (transaction) => {
-        const materialQuery = query(collection(db, "materials"), where("id", "==", itemId), where("branch", "==", branchName));
+        const materialQuery = query(collection(db, "materials"), where("id", "==", itemId));
         const materialSnapshot = await getDocs(materialQuery);
 
         if (materialSnapshot.empty) {
@@ -422,15 +418,31 @@ export function useMaterials() {
   const bulkAddMaterials = async (data: any[], currentBranch: string) => {
     setLoading(true);
     let newCount = 0;
-    let updateCount = 0;
+    let deleteCount = 0;
     let errorCount = 0;
     let supplierAddedCount = 0;
     let categoryAddedCount = 0;
 
+    try {
+      // 1. 먼저 모든 기존 자재 삭제
+      const existingMaterialsSnapshot = await getDocs(collection(db, 'materials'));
+      const deletePromises = existingMaterialsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+      await Promise.all(deletePromises);
+      deleteCount = existingMaterialsSnapshot.docs.length;
+    } catch (error) {
+      console.error("기존 자재 삭제 오류:", error);
+      toast({ 
+        variant: 'destructive', 
+        title: '오류', 
+        description: '기존 자재 삭제 중 오류가 발생했습니다.' 
+      });
+      setLoading(false);
+      return;
+    }
+
     const dataToProcess = data.filter(row => {
-        const branchMatch = currentBranch === 'all' || row.branch === currentBranch;
         const hasName = row.name && String(row.name).trim() !== '';
-        return branchMatch && hasName;
+        return hasName;
     });
 
     // 새로운 공급업체들을 수집
@@ -521,93 +533,99 @@ export function useMaterials() {
         }
     }
 
-    await Promise.all(dataToProcess.map(async (row) => {
-        try {
-            const stock = Number(row.current_stock ?? row.stock ?? row.quantity);
-            if (isNaN(stock)) return;
-
-            const materialData = {
-                id: row.id || null,
-                name: String(row.name),
-                branch: String(row.branch),
-                stock: stock,
-                price: Number(row.price) || 0,
-                supplier: String(row.supplier) || '미지정',
-                mainCategory: String(row.mainCategory) || '기타자재',
-                midCategory: String(row.midCategory) || '기타',
-                size: String(row.size) || '기타',
-                color: String(row.color) || '기타',
-            };
-
-            // 지점별로 구분하여 자재 검색
-            let q;
-            if (materialData.id) {
-                q = query(collection(db, "materials"), where("id", "==", materialData.id), where("branch", "==", materialData.branch));
-            } else {
-                q = query(collection(db, "materials"), where("name", "==", materialData.name), where("branch", "==", materialData.branch));
-            }
-
-            const querySnapshot = await getDocs(q);
-
-            if (!querySnapshot.empty) {
-                // 해당 지점에 같은 이름의 자재가 있으면 업데이트
-                const docRef = querySnapshot.docs[0].ref;
-                await setDoc(docRef, materialData, { merge: true });
-                updateCount++;
-
-            } else {
-                // 해당 지점에 같은 이름의 자재가 없으면 새로 등록
-                let newId;
-                
-                // ID 결정: 엑셀에 ID가 있으면 사용, 없으면 자동 생성
-                if (materialData.id && materialData.id.trim()) {
-                    newId = materialData.id.trim();
-                    
-                    // 중복 ID 검증 (같은 지점 내에서)
-                    const duplicateQuery = query(
-                        collection(db, "materials"),
-                        where("id", "==", newId),
-                        where("branch", "==", materialData.branch)
-                    );
-                    const duplicateSnapshot = await getDocs(duplicateQuery);
-                    
-                    if (!duplicateSnapshot.empty) {
-                        console.warn(`중복된 자재 ID (${newId})가 발견되어 자동 생성 ID를 사용합니다.`);
-                        newId = await generateNewId();
-                    }
-                } else {
-                    newId = await generateNewId();
-                }
-                
-                const newDocRef = doc(collection(db, "materials"));
-                await setDoc(newDocRef, { 
-                    ...materialData, 
-                    id: newId,
-                    code: materialData.id || '', // 원본 엑셀 ID도 code 필드에 보존
-                });
-                newCount++;
-
-            }
-        } catch (error) {
-            console.error("Error processing row:", row, error);
-            errorCount++;
+    // 순차 처리로 변경하여 ID 매핑이 올바르게 동작하도록 함
+    for (let index = 0; index < dataToProcess.length; index++) {
+      const row = dataToProcess[index];
+      try {
+        // 엑셀 필드명 매핑 (한글 필드명을 영문 필드명으로 변환)
+        const mappedRow = {
+          name: row.name || row.자재명 || '',
+          mainCategory: row.mainCategory || row.대분류 || '',
+          midCategory: row.midCategory || row.중분류 || '',
+          price: row.price || row.가격 || 0,
+          supplier: row.supplier || row.공급업체 || '',
+          stock: row.stock || row.재고 || 0,
+          size: row.size || row.규격 || '',
+          color: row.color || row.색상 || '',
+          code: row.code || row.코드 || row.자재코드 || '', // 자재코드 필드 추가
+          category: row.category || row.카테고리 || '',
+          status: row.status || row.상태 || 'active' // 상태 필드 추가
+        };
+        
+        if (!mappedRow.name) {
+          return;
         }
-    }));
-
-    if (errorCount > 0) {
-        toast({ variant: 'destructive', title: '일부 처리 오류', description: `${errorCount}개 항목 처리 중 오류가 발생했습니다.` });
+        const materialName = String(mappedRow.name);
+        const materialCode = String(mappedRow.code || '');
+        
+        // 자재 데이터 준비 (엑셀의 모든 필드를 완전히 덮어쓰기)
+        const materialData = {
+          name: materialName,
+          mainCategory: String(mappedRow.mainCategory || ''),
+          midCategory: String(mappedRow.midCategory || ''),
+          price: Number(mappedRow.price) || 0,
+          supplier: String(mappedRow.supplier || ''),
+          stock: Number(mappedRow.stock) || 0,
+          size: String(mappedRow.size || ''),
+          color: String(mappedRow.color || ''),
+          code: materialCode,
+          category: String(mappedRow.category || ''),
+          status: String(mappedRow.status || 'active'),
+          updatedAt: serverTimestamp(), // 업데이트 시간 추가
+        };
+        
+        // 모든 자재를 새로 추가 (기존 자재는 이미 삭제됨)
+        const docRef = doc(collection(db, "materials"));
+        
+        // 자재 ID 결정 로직: 엑셀에 코드가 있으면 무조건 그것을 사용 (자재명 중복 무시)
+        let materialId;
+        if (materialCode && materialCode.trim()) {
+          // 1. 엑셀에 코드가 있으면 무조건 사용 (각 행이 독립적으로 처리됨)
+          materialId = materialCode.trim();
+        } else {
+          // 2. 엑셀에 코드가 없으면 새 ID 생성
+          materialId = await generateNewId();
+        }
+        
+        await setDoc(docRef, { 
+          ...materialData, 
+          id: materialId,
+          createdAt: serverTimestamp() 
+        });
+        newCount++;
+      } catch (error) {
+        console.error("Error processing material:", error);
+        errorCount++;
+      }
     }
 
-    let description = `성공: 신규 자재 ${newCount}개 추가, ${updateCount}개 업데이트 완료.`;
+    setLoading(false);
+    if (errorCount > 0) {
+        toast({ 
+            variant: 'destructive', 
+            title: '일부 처리 오류', 
+            description: `${errorCount}개 항목 처리 중 오류가 발생했습니다.` 
+        });
+    }
+    let description = `성공: 기존 자재 ${deleteCount}개 삭제, 신규 자재 ${newCount}개 추가 완료.`;
     if (supplierAddedCount > 0) {
         description += ` 새로운 공급업체 ${supplierAddedCount}개가 거래처 관리에 추가되었습니다.`;
     }
     if (categoryAddedCount > 0) {
         description += ` 새로운 카테고리 ${categoryAddedCount}개가 카테고리 관리에 추가되었습니다.`;
     }
-
-    toast({ title: '처리 완료', description });
-    await fetchMaterials();
+    if (errorCount > 0) {
+        description += ` (${errorCount}개 항목 처리 중 오류 발생)`;
+    }
+    
+    toast({ 
+        title: '처리 완료', 
+        description
+    });
+    // 자재 목록 새로고침 (약간의 지연 후)
+    setTimeout(async () => {
+        await fetchMaterials();
+    }, 1000);
   };
   return { materials, loading, updateStock, fetchMaterials, manualUpdateStock, addMaterial, updateMaterial, deleteMaterial, bulkAddMaterials, updateMaterialIds };
 }

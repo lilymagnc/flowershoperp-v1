@@ -3,13 +3,14 @@
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { useUserRole } from '@/hooks/use-user-role';
+import { useSettings } from '@/hooks/use-settings';
 import { SidebarProvider, Sidebar, SidebarTrigger, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter } from "@/components/ui/sidebar";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from '@/components/ui/button';
-import { LayoutDashboard, Boxes, ShoppingCart, Users, UserCog, LogOut, ClipboardList, Store, BookUser, Hammer, History, Briefcase, MapPin, Truck, Images, DollarSign, Target, BarChart3, Package, Receipt, Settings, Database, Percent } from 'lucide-react';
+import { LayoutDashboard, Boxes, ShoppingCart, Users, UserCog, LogOut, ClipboardList, Store, BookUser, Hammer, History, Briefcase, MapPin, Truck, Images, DollarSign, Target, BarChart3, Package, Receipt, Settings, Database, Percent, FileText, UserCheck, TrendingUp, CreditCard, HardDrive, Camera } from 'lucide-react';
 import { signOut } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
-import React from 'react';
+import React, { useEffect } from 'react';
 import Image from 'next/image';
 import { ROLE_LABELS } from '@/types/user-role';
 
@@ -19,7 +20,8 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const { user, loading } = useAuth();
-  const { userRole, loading: roleLoading, isHQManager, isBranchUser, isBranchManager } = useUserRole();
+  const { userRole, loading: roleLoading } = useUserRole();
+  const { settings } = useSettings();
   const router = useRouter();
 
   React.useEffect(() => {
@@ -28,34 +30,12 @@ export default function DashboardLayout({
     }
   }, [user, loading, router]);
 
-  // 지점 사용자가 로그인 후 주문접수 페이지로 리다이렉트 (허용된 페이지 제외)
-  React.useEffect(() => {
-    if (!loading && !roleLoading && user && !isHQManager()) {
-      const currentPath = window.location.pathname;
-      // 허용된 페이지 목록 (지점 사용자가 접근 가능한 페이지들)
-      const allowedPages = [
-        '/dashboard',                      // 대시보드 (지점 사용자용)
-        '/dashboard/orders/new',           // 주문접수
-        '/dashboard/material-request',     // 자재요청
-        '/dashboard/orders',               // 주문현황
-        '/dashboard/orders/print-message', // 메시지 인쇄 미리보기
-        '/dashboard/print-labels',         // 라벨 인쇄 미리보기
-        '/dashboard/customers/statement/print', // 거래명세서 인쇄 미리보기
-        '/dashboard/pickup-delivery',      // 픽업/배송관리
-        '/dashboard/recipients',           // 수령자관리
-        '/dashboard/materials',            // 자재관리
-        '/dashboard/simple-expenses',      // 간편지출관리
-        '/dashboard/customers',            // 고객관리
-        '/dashboard/partners',             // 거래처관리
-        '/dashboard/sample-albums',        // 샘플앨범
-        '/dashboard/barcode-scanner'       // 바코드 스캐너
-      ];
-      // 허용된 페이지가 아닌 경우에만 주문접수 페이지로 리다이렉트
-      if (!allowedPages.includes(currentPath)) {
-        router.push('/dashboard/orders/new');
-      }
+  // 설정에서 사이트명을 가져와서 브라우저 탭 제목 설정
+  useEffect(() => {
+    if (settings?.siteName) {
+      document.title = settings.siteName;
     }
-  }, [user, loading, roleLoading, isHQManager, router]);
+  }, [settings?.siteName]);
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -75,8 +55,93 @@ export default function DashboardLayout({
 
   const getRoleDisplayName = () => {
     if (user.isAnonymous) return '익명 사용자';
-    if (userRole) return ROLE_LABELS[userRole.role];
-    return '사용자';
+    if (userRole) {
+      // 실제 사용자 권한과 소속 표시
+      const roleLabel = userRole.branchName || '메인매장';
+      return roleLabel;
+    }
+    return '메인매장';
+  };
+
+  const getRoleDisplay = () => {
+    if (user.isAnonymous) return '익명 사용자';
+    if (user) {
+      // 실제 사용자 권한 표시 (단독매장이므로 소속 불필요)
+      return user.role || '직원';
+    }
+    return '직원';
+  };
+
+  const getMenuItem = (menuKey: string) => {
+    const menuConfig = settings?.menuSettings?.[menuKey];
+    if (!menuConfig) return null;
+
+    let icon: React.ReactNode = null;
+    let href = `/dashboard/${menuKey}`;
+    
+    switch (menuKey) {
+      case 'dashboard':
+        icon = <LayoutDashboard className="h-4 w-4" />;
+        href = '/dashboard';
+        break;
+      case 'orders/new':
+        icon = <ShoppingCart className="h-4 w-4" />;
+        href = '/dashboard/orders/new';
+        break;
+      case 'orders':
+        icon = <ClipboardList className="h-4 w-4" />;
+        break;
+      case 'customers':
+        icon = <Users className="h-4 w-4" />;
+        break;
+      case 'products':
+        icon = <Boxes className="h-4 w-4" />;
+        break;
+      case 'materials':
+        icon = <Package className="h-4 w-4" />;
+        break;
+      case 'pickup-delivery':
+        icon = <Truck className="h-4 w-4" />;
+        break;
+      case 'recipients':
+        icon = <BookUser className="h-4 w-4" />;
+        break;
+      case 'simple-expenses':
+        icon = <DollarSign className="h-4 w-4" />;
+        break;
+      case 'partners':
+        icon = <Briefcase className="h-4 w-4" />;
+        break;
+      case 'sample-albums':
+        icon = <Images className="h-4 w-4" />;
+        break;
+      case 'reports':
+        icon = <FileText className="h-4 w-4" />;
+        break;
+      case 'budgets':
+        icon = <CreditCard className="h-4 w-4" />;
+        break;
+      case 'hr':
+        icon = <UserCheck className="h-4 w-4" />;
+        break;
+      case 'users':
+        icon = <UserCog className="h-4 w-4" />;
+        break;
+      case 'stock-history':
+        icon = <History className="h-4 w-4" />;
+        break;
+      case 'settings':
+        icon = <Settings className="h-4 w-4" />;
+        break;
+      default:
+        icon = null;
+    }
+
+    return {
+      href: href,
+      label: menuConfig.label,
+      icon: icon,
+    };
   };
 
   return (
@@ -85,7 +150,7 @@ export default function DashboardLayout({
             <SidebarHeader className="p-4">
                 <div className="flex items-center justify-center">
                     <Image 
-                      src="https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg" 
+                      src={settings?.brandLogo || "https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg"} 
                       alt="Logo" 
                       width={150} 
                       height={40} 
@@ -96,151 +161,92 @@ export default function DashboardLayout({
             </SidebarHeader>
             <SidebarContent>
                 <SidebarMenu>
-                    {/* 1. 대시보드 (모든 사용자) */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={() => router.push('/dashboard')}><LayoutDashboard />대시보드</SidebarMenuButton>
-                    </SidebarMenuItem>
-                    
-                    {/* 2. 샘플앨범 (모든 사용자) */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={() => router.push('/dashboard/sample-albums')}><Images />샘플앨범</SidebarMenuButton>
-                    </SidebarMenuItem>
-                    
-                    {/* 3. 주문 접수 (모든 사용자) */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={() => router.push('/dashboard/orders/new')}><ShoppingCart />주문 접수</SidebarMenuButton>
-                    </SidebarMenuItem>
-                    
-                    {/* 4. 주문 현황 (모든 사용자) */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={() => router.push('/dashboard/orders')}><ClipboardList />주문 현황</SidebarMenuButton>
-                    </SidebarMenuItem>
-                    
-                    {/* 5. 픽업/배송예약관리 (모든 사용자) */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={() => router.push('/dashboard/pickup-delivery')}><Truck />픽업/배송예약관리</SidebarMenuButton>
-                    </SidebarMenuItem>
-                    
-                    {/* 6. 수령자 관리 (모든 사용자) */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={() => router.push('/dashboard/recipients')}><MapPin />수령자 관리</SidebarMenuButton>
-                    </SidebarMenuItem>
-                    
-                    {/* 7. 고객 관리 (모든 사용자) */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={() => router.push('/dashboard/customers')}><BookUser />고객 관리</SidebarMenuButton>
-                    </SidebarMenuItem>
-                    
-                    {/* 8. 거래처 관리 (모든 사용자) */}
-                    <SidebarMenuItem>
-                        <SidebarMenuButton onClick={() => router.push('/dashboard/partners')}><Briefcase />거래처 관리</SidebarMenuButton>
-                    </SidebarMenuItem>
-
-                    {/* 본사 관리자만 접근 가능한 메뉴들 */}
-                    {isHQManager() && (
-                        <>
-                            {/* 9. 상품 관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/products')}><Boxes />상품 관리</SidebarMenuButton>
+                    {(() => {
+                      const menuSettings = settings?.menuSettings;
+                      if (!menuSettings || Object.keys(menuSettings).length === 0) {
+                        // 기본 메뉴 설정이 없을 때 기본 메뉴 표시
+                        const defaultMenus = [
+                          { key: 'dashboard', label: '대시보드', href: '/dashboard', icon: <LayoutDashboard className="h-4 w-4" /> },
+                          { key: 'orders/new', label: '주문접수', href: '/dashboard/orders/new', icon: <ShoppingCart className="h-4 w-4" /> },
+                          { key: 'orders', label: '주문현황', href: '/dashboard/orders', icon: <ClipboardList className="h-4 w-4" /> },
+                          { key: 'customers', label: '고객관리', href: '/dashboard/customers', icon: <Users className="h-4 w-4" /> },
+                          { key: 'products', label: '상품관리', href: '/dashboard/products', icon: <Boxes className="h-4 w-4" /> },
+                          { key: 'materials', label: '자재관리', href: '/dashboard/materials', icon: <Package className="h-4 w-4" /> },
+                          { key: 'pickup-delivery', label: '픽업/배송', href: '/dashboard/pickup-delivery', icon: <Truck className="h-4 w-4" /> },
+                          { key: 'recipients', label: '수령자관리', href: '/dashboard/recipients', icon: <BookUser className="h-4 w-4" /> },
+                          { key: 'simple-expenses', label: '지출관리', href: '/dashboard/simple-expenses', icon: <DollarSign className="h-4 w-4" /> },
+                          { key: 'partners', label: '거래처관리', href: '/dashboard/partners', icon: <Briefcase className="h-4 w-4" /> },
+                          { key: 'sample-albums', label: '샘플앨범', href: '/dashboard/sample-albums', icon: <Images className="h-4 w-4" /> },
+                          { key: 'reports', label: '리포트분석', href: '/dashboard/reports', icon: <FileText className="h-4 w-4" /> },
+                          { key: 'budgets', label: '예산관리', href: '/dashboard/budgets', icon: <CreditCard className="h-4 w-4" /> },
+                          { key: 'hr', label: '인사관리', href: '/dashboard/hr', icon: <UserCheck className="h-4 w-4" /> },
+                          { key: 'users', label: '사용자관리', href: '/dashboard/users', icon: <UserCog className="h-4 w-4" /> },
+                          { key: 'stock-history', label: '재고변동기록', href: '/dashboard/stock-history', icon: <History className="h-4 w-4" /> },
+                          { key: 'settings', label: '설정', href: '/dashboard/settings', icon: <Settings className="h-4 w-4" /> },
+                        ];
+                        
+                        return defaultMenus.map((menu) => (
+                          <SidebarMenuItem key={menu.key}>
+                            <SidebarMenuButton asChild>
+                                <a href={menu.href}>
+                                    {menu.icon}
+                                    <span>{menu.label}</span>
+                                </a>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        ));
+                      }
+                      
+                      // 설정된 메뉴 표시
+                      return Object.entries(menuSettings)
+                        .sort(([,a], [,b]) => a.order - b.order)
+                        .filter(([, config]) => config.visible)
+                        .map(([menuKey, config]) => {
+                          const menuItem = getMenuItem(menuKey);
+                          if (!menuItem) return null;
+                          
+                          return (
+                            <SidebarMenuItem key={menuKey}>
+                              <SidebarMenuButton asChild>
+                                  <a href={menuItem.href}>
+                                      {menuItem.icon}
+                                      <span>{menuItem.label}</span>
+                                  </a>
+                              </SidebarMenuButton>
                             </SidebarMenuItem>
-                            {/* 10. 자재 관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/materials')}><Hammer />자재 관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 11. 재고 변동 기록 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/stock-history')}><History />재고 변동 기록</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 12. 자재 요청 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/material-request')}><Package />자재 요청</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 13. 구매 관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/purchase-management')}><ShoppingCart />구매 관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 14. 간편 지출관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/simple-expenses')}><Receipt />간편 지출관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 15. 지점 관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/branches')}><Store />지점 관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 16. 비용 관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/expenses')}><DollarSign />비용 관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 17. 예산 관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/budgets')}><Target />예산 관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 18. 리포트 분석 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/reports')}><BarChart3 />리포트 분석</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 19. 인사 관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/hr')}><Users />인사 관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 20. 사용자 관리 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/users')}><UserCog />사용자 관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 21. 시스템 설정 (본사 관리자만) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/settings')}><Settings />시스템 설정</SidebarMenuButton>
-                            </SidebarMenuItem>
-                        </>
-                    )}
-
-                    {/* 지점 사용자용 메뉴들 */}
-                    {!isHQManager() && (
-                        <>
-                            {/* 자재 요청 (지점 사용자) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/material-request')}><Package />자재 요청</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 자재 관리 (지점 사용자) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/materials')}><Hammer />자재 관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                            {/* 간편 지출관리 (지점 사용자) */}
-                            <SidebarMenuItem>
-                                <SidebarMenuButton onClick={() => router.push('/dashboard/simple-expenses')}><Receipt />간편 지출관리</SidebarMenuButton>
-                            </SidebarMenuItem>
-                        </>
-                    )}
+                          );
+                        });
+                    })()}
                 </SidebarMenu>
             </SidebarContent>
             <SidebarFooter className="p-4">
-                <div className="flex items-center gap-3 mb-2">
-                    <Avatar>
-                        <AvatarImage src={user.photoURL ?? ''} />
-                        <AvatarFallback>{user.email?.[0].toUpperCase() ?? 'U'}</AvatarFallback>
+                <div className="flex items-center gap-2 mb-4">
+                    <Avatar className="h-8 w-8">
+                        <AvatarImage src={user.photoURL || undefined} />
+                        <AvatarFallback>{user.displayName?.[0] || user.email?.[0] || 'U'}</AvatarFallback>
                     </Avatar>
-                    <div className="flex flex-col overflow-hidden">
-                        <p className="text-sm font-medium truncate">{user.isAnonymous ? '익명 사용자' : user.email}</p>
-                        <p className="text-xs text-muted-foreground">역할: {getRoleDisplayName()}</p>
-                        {userRole?.branchName && (
-                            <p className="text-xs text-muted-foreground">지점: {userRole.branchName}</p>
-                        )}
-                    </div>
+                                         <div className="flex-1 min-w-0">
+                         <p className="text-sm font-medium truncate">{user.displayName || user.email}</p>
+                         <p className="text-xs text-muted-foreground truncate">{getRoleDisplay()}</p>
+                     </div>
                 </div>
-                <Button variant="ghost" className="w-full justify-start" onClick={handleLogout}><LogOut className="mr-2 h-4 w-4" />로그아웃</Button>
+                <Button variant="outline" size="sm" onClick={handleLogout} className="w-full">
+                    <LogOut className="h-4 w-4 mr-2" />
+                    로그아웃
+                </Button>
             </SidebarFooter>
         </Sidebar>
-        <main className="flex-1 print:flex-grow-0 print:w-full print:max-w-full print:p-0 print:m-0">
-             <header className="flex h-14 items-center gap-4 border-b bg-background px-4 lg:h-[60px] lg:px-6">
-                <SidebarTrigger className="xl:hidden" />
-                <div className="w-full flex-1">
-                    {/* Header content can go here if needed */}
+        <div className="flex-1 flex flex-col">
+            <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+                <div className="flex h-14 items-center gap-2 px-4">
+                    <SidebarTrigger className="-ml-1" />
+                    <div className="flex-1" />
                 </div>
-             </header>
-            <div className="p-4 lg:p-6">
+            </header>
+            <main className="flex-1 overflow-auto">
                 {children}
-            </div>
-        </main>
+            </main>
+        </div>
     </SidebarProvider>
   );
 }

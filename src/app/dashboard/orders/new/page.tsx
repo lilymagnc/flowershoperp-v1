@@ -13,7 +13,7 @@ import { PageHeader } from "@/components/page-header";
 import { useToast } from "@/hooks/use-toast";
 import { MinusCircle, PlusCircle, Trash2, Store, Search, Calendar as CalendarIcon, ChevronDown, ChevronUp, Loader2, Plus } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useBranches, Branch, initialBranches } from "@/hooks/use-branches";
+
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Calendar } from "@/components/ui/calendar";
 import { Command, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
@@ -29,6 +29,8 @@ import { useProducts, Product } from "@/hooks/use-products";
 import { useCustomers, Customer } from "@/hooks/use-customers";
 import { useAuth } from "@/hooks/use-auth";
 import { useDiscountSettings } from "@/hooks/use-discount-settings";
+import { useSettings } from "@/hooks/use-settings";
+import { useDeliveryFees } from "@/hooks/use-delivery-fees";
 import { Timestamp } from "firebase/firestore";
 import { debounce } from "lodash";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -48,12 +50,29 @@ declare global {
 }
 export default function NewOrderPage() {
   const { user } = useAuth();
-  const { branches, loading: branchesLoading, fetchBranches } = useBranches();
+
   const { products: allProducts, loading: productsLoading } = useProducts();
   const { orders, loading: ordersLoading, addOrder, updateOrder } = useOrders();
   const { findCustomersByContact, customers } = useCustomers();
   const { discountSettings, canApplyDiscount, getActiveDiscountRates } = useDiscountSettings();
+  const { settings } = useSettings();
+  const { deliveryFees, loading: deliveryFeesLoading, getDeliveryFeeByDistrict, isFreeDelivery } = useDeliveryFees();
   const router = useRouter();
+  
+  // 배송비 계산 함수
+  const calculateDeliveryFee = (address: string) => {
+    // 주소에서 지역 추출
+    const extractDistrictFromAddress = (address: string) => {
+      // 서울시 강남구, 경기도 성남시 등에서 구/시 추출
+      const match = address.match(/(?:시|도)\s*([가-힣]+구|[가-힣]+시|[가-힣]+군)/);
+      return match ? match[1] : '';
+    };
+    
+    const district = extractDistrictFromAddress(address);
+    const fee = getDeliveryFeeByDistrict(district);
+    
+    return { fee, district };
+  };
   const searchParams = useSearchParams();
   const orderId = searchParams.get('id');
   
@@ -77,10 +96,11 @@ export default function NewOrderPage() {
   }, []);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const { toast } = useToast();
-  const [selectedBranch, setSelectedBranch] = useState<Branch | null>(null);
   const [deliveryFeeType, setDeliveryFeeType] = useState<"auto" | "manual">("auto");
   const [manualDeliveryFee, setManualDeliveryFee] = useState(0);
-  const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
+  const [calculatedDeliveryFee, setCalculatedDeliveryFee] = useState(0);
+  const [selectedDistrict, setSelectedDistrict] = useState("");
+  // 단독샵이므로 지역별 배송비 제거
   const [ordererName, setOrdererName] = useState("");
   const [ordererContact, setOrdererContact] = useState("");
   const [ordererCompany, setOrdererCompany] = useState("");
@@ -101,26 +121,7 @@ export default function NewOrderPage() {
   const [isCustomerSearchOpen, setIsCustomerSearchOpen] = useState(false);
   const [orderType, setOrderType] = useState<OrderType>("store");
   const [receiptType, setReceiptType] = useState<ReceiptType>("store_pickup");
-  // 사용자 권한에 따른 지점 필터링
-  const isAdmin = user?.role === '본사 관리자';
-  const userBranch = user?.franchise;
-  // 사용자가 선택할 수 있는 지점 목록
-  const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 관리자는 모든 지점
-    } else {
-      return branches.filter(branch => branch.name === userBranch); // 직원은 소속 지점만
-    }
-  }, [branches, isAdmin, userBranch]);
-  // 직원의 경우 자동으로 소속 지점으로 설정
-  useEffect(() => {
-    if (!isAdmin && userBranch && !selectedBranch) {
-      const userBranchData = branches.find(branch => branch.name === userBranch);
-      if (userBranchData) {
-        setSelectedBranch(userBranchData);
-      }
-    }
-  }, [isAdmin, userBranch, selectedBranch, branches]);
+  // 단독샵이므로 지점 관련 코드 제거
   // 현재 시간을 30분 단위로 반올림하는 함수
   const getInitialTime = () => {
     const now = new Date();
@@ -169,12 +170,10 @@ export default function NewOrderPage() {
     }
     return options;
   }, []);
+  // 단독샵이므로 모든 상품 표시
   const branchProducts = useMemo(() => {
-    if (!selectedBranch) return [];
-    
-    // 선택한 지점의 상품만 표시 (본사 관리자도 선택한 지점만)
-    return allProducts.filter(p => p.branch === selectedBranch.name);
-  }, [allProducts, selectedBranch]);
+    return allProducts;
+  }, [allProducts]);
   const mainCategories = useMemo(() => [...new Set(branchProducts.map(p => p.mainCategory).filter(Boolean))], [branchProducts]);
   const midCategories = useMemo(() => {
     if (!selectedMainCategory) return [];
@@ -193,43 +192,25 @@ export default function NewOrderPage() {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     return orders.filter(order => {
-      if (!selectedBranch || order.branchName !== selectedBranch.name) return false;
       if (!order.orderDate) return false;
       const orderDate = (order.orderDate as Timestamp).toDate();
       orderDate.setHours(0,0,0,0);
       return orderDate.getTime() === today.getTime();
     })
-  }, [orders, selectedBranch]);
-  // 사용자 역할에 따른 자동 지점 선택
+  }, [orders]);
+  // 단독샵이므로 사용자 역할별 지점 선택 제거
   useEffect(() => {
-    if (user && branches.length > 0 && !selectedBranch) {
-      // 본사 관리자가 아닌 경우 해당 지점 자동 선택
-      if (user.role !== '본사 관리자' && user.franchise && user.franchise !== '본사') {
-        const userBranch = branches.find(branch => branch.name === user.franchise);
-        if (userBranch) {
-          setSelectedBranch(userBranch);
-        }
-      }
-    }
-  }, [user, branches, selectedBranch]);
-  useEffect(() => {
-      if (orderId && !ordersLoading && orders.length > 0 && !productsLoading && allProducts.length > 0 && !branchesLoading && branches.length > 0) {
+      if (orderId && !ordersLoading && orders.length > 0 && !productsLoading && allProducts.length > 0) {
         const foundOrder = orders.find(o => o.id === orderId);
         if(foundOrder) {
             setExistingOrder(foundOrder);
-            const branch = branches.find(b => b.id === foundOrder.branchId);
-            setSelectedBranch(branch || null);
             setOrderItems(foundOrder.items.map(item => {
-                const product = allProducts.find(p => p.id === item.id && p.branch === foundOrder.branchName);
+                const product = allProducts.find(p => p.id === item.id);
                 return { ...product!, quantity: item.quantity };
             }).filter(item => item.id)); 
-            if(foundOrder.deliveryInfo?.district && foundOrder.deliveryInfo.district !== '') {
-                setDeliveryFeeType("auto");
-                setSelectedDistrict(foundOrder.deliveryInfo.district);
-            } else {
-                setDeliveryFeeType("manual");
-                setManualDeliveryFee(foundOrder.summary.deliveryFee);
-            }
+            // 단독샵이므로 배송비는 직접 입력만 가능
+            setDeliveryFeeType("manual");
+            setManualDeliveryFee(foundOrder.summary.deliveryFee);
             setOrdererName(foundOrder.orderer.name);
             setOrdererContact(foundOrder.orderer.contact);
             setOrdererCompany(foundOrder.orderer.company || "");
@@ -275,45 +256,113 @@ export default function NewOrderPage() {
             setPaymentStatus(foundOrder.payment.status as PaymentStatus);
         }
       }
-  }, [orderId, orders, ordersLoading, branches, branchesLoading, allProducts, productsLoading])
+  }, [orderId, orders, ordersLoading, allProducts, productsLoading])
   useEffect(() => {
     if (receiptType === 'store_pickup' || receiptType === 'pickup_reservation') {
       setPickerName(ordererName);
       setPickerContact(ordererContact);
       setDeliveryFeeType("manual");
       setManualDeliveryFee(0);
-      setSelectedDistrict(null);
       // 매장픽업(즉시)일 때는 현재 날짜와 시간으로 설정
       if (receiptType === 'store_pickup') {
         setScheduleDate(new Date());
         setScheduleTime(getInitialTime());
       }
     } else if (receiptType === 'delivery_reservation') {
+      // 배송일 경우 주문자 정보를 수령자 정보에 자동 입력
+      setRecipientName(ordererName);
+      setRecipientContact(ordererContact);
       // 배송일 경우 기본값을 자동계산으로 설정
       setDeliveryFeeType("auto");
     }
   }, [ordererName, ordererContact, receiptType]);
-  // 자동계산이 불가능할 경우 직접입력으로 변경하는 로직 추가
+  // 배송비 자동 계산 로직
   useEffect(() => {
-    if (receiptType === 'delivery_reservation' && deliveryFeeType === 'auto') {
-      // 지점이 선택되지 않았거나 배송비 정보가 없는 경우
-      if (!selectedBranch || !selectedBranch.deliveryFees || selectedBranch.deliveryFees.length === 0) {
-        setDeliveryFeeType("manual");
+    if (receiptType === 'delivery_reservation' && deliveryFeeType === 'manual') {
+      // 무료 배송 기준 확인
+      const freeThreshold = settings?.freeDeliveryThreshold || 0;
+      const subtotal = orderItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+      
+      if (freeThreshold > 0 && subtotal >= freeThreshold) {
         setManualDeliveryFee(0);
+      } else if (manualDeliveryFee === 0 && subtotal < freeThreshold) {
+        // 무료 배송 기준 미달 시 기본 배송비 설정
+        const defaultFee = settings?.defaultDeliveryFee || 0;
+        setManualDeliveryFee(defaultFee);
       }
     }
-  }, [selectedBranch, deliveryFeeType, receiptType]);
+  }, [orderItems, receiptType, deliveryFeeType, settings?.freeDeliveryThreshold, settings?.defaultDeliveryFee, manualDeliveryFee]);
+
+  // 배송지 주소 변경 시 배송비 자동 계산
+  useEffect(() => {
+    if (receiptType === 'delivery_reservation' && deliveryFeeType === 'auto' && deliveryAddress) {
+      // 주소에서 지역(구) 추출하는 함수
+      const extractDistrictFromAddress = (address: string): string => {
+        if (!address) return "";
+        
+        // 서울특별시, 서울시 등의 패턴을 찾아서 구 단위 추출
+        const seoulPattern = /(서울특별시|서울시?)\s*([가-힣]+구)/;
+        const match = address.match(seoulPattern);
+        
+        if (match && match[2]) {
+          return match[2]; // 구 단위 반환 (예: "영등포구")
+        }
+        
+        // 다른 시도 패턴들도 추가 가능
+        const otherPattern = /([가-힣]+시)\s*([가-힣]+구)/;
+        const otherMatch = address.match(otherPattern);
+        
+        if (otherMatch && otherMatch[2]) {
+          return otherMatch[2];
+        }
+        
+        return "";
+      };
+
+      // 배송비 자동 계산 함수
+      const calculateDeliveryFee = (address: string): { fee: number; district: string } => {
+        if (!address) {
+          return { fee: 0, district: "" };
+        }
+
+        const district = extractDistrictFromAddress(address);
+        if (!district) {
+          return { fee: 0, district: "" };
+        }
+
+        // 새로운 배송비 시스템 사용
+        const fee = getDeliveryFeeByDistrict(district);
+        return { fee, district };
+      };
+
+      const { fee, district } = calculateDeliveryFee(deliveryAddress);
+      setCalculatedDeliveryFee(fee);
+      setSelectedDistrict(district);
+    } else {
+      setCalculatedDeliveryFee(0);
+      setSelectedDistrict("");
+    }
+  }, [deliveryAddress, deliveryFeeType, receiptType, orderItems, getDeliveryFeeByDistrict]);
   const deliveryFee = useMemo(() => {
     if (receiptType === 'store_pickup' || receiptType === 'pickup_reservation') return 0;
+    
+    const subtotal = orderItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+    
     if (deliveryFeeType === 'manual') {
+      // 새로운 무료배송 시스템 확인
+      if (selectedDistrict && isFreeDelivery(selectedDistrict, subtotal)) {
+        return 0;
+      }
       return manualDeliveryFee;
     }
-    if (!selectedBranch || !selectedDistrict) {
+    
+    // 자동 계산: 무료배송 기준 확인
+    if (selectedDistrict && isFreeDelivery(selectedDistrict, subtotal)) {
       return 0;
     }
-    const feeInfo = selectedBranch.deliveryFees?.find(df => df.district === selectedDistrict);
-    return feeInfo ? feeInfo.fee : (selectedBranch.deliveryFees?.find(df => df.district === "기타")?.fee ?? 0);
-  }, [deliveryFeeType, manualDeliveryFee, selectedBranch, selectedDistrict, receiptType]);
+    
+    return calculatedDeliveryFee;
+  }, [deliveryFeeType, manualDeliveryFee, receiptType, orderItems, calculatedDeliveryFee, selectedDistrict, isFreeDelivery]);
   const debouncedSearch = useCallback(
     debounce(async (contact: string) => {
       if (contact.length >= 4) {
@@ -353,6 +402,8 @@ const handleOrdererContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     }
     return `${phoneNumber.slice(0, 3)}-${phoneNumber.slice(3, 7)}-${phoneNumber.slice(7, 11)}`;
   }
+
+
   const handleGenericContactChange = (e: React.ChangeEvent<HTMLInputElement>, setter: React.Dispatch<React.SetStateAction<string>>) => {
     const formattedPhoneNumber = formatPhoneNumber(e.target.value);
     setter(formattedPhoneNumber);
@@ -432,7 +483,7 @@ const handleOrdererContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       supplier: "수동 등록",
       size: "기타",
       color: "기타",
-      branch: selectedBranch?.name || "",
+              branch: "단독샵", // 단독샵 기본값
       status: "active",
       isCustomProduct: true, // 수동 추가 상품 표시
     };
@@ -454,14 +505,9 @@ const handleOrdererContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setIsSubmitting(false);
       return;
     }
-    if (!selectedBranch) {
-        toast({ variant: 'destructive', title: '주문 오류', description: '출고 지점을 선택해주세요.' });
-        setIsSubmitting(false);
-        return;
-    }
     const orderPayload: OrderData = {
-        branchId: selectedBranch.id,
-        branchName: selectedBranch.name,
+        branchId: "default", // 단독샵 기본값
+        branchName: "단독샵", // 단독샵 기본값
         orderDate: existingOrder?.orderDate || new Date(),
         status: existingOrder?.status || 'processing', 
         orderType: orderType,
@@ -495,7 +541,7 @@ const handleOrdererContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
             recipientName, 
             recipientContact, 
             address: `${deliveryAddress} ${deliveryAddressDetail}`,
-            district: selectedDistrict ?? '',
+            district: '', // 단독샵이므로 지역 정보 제거
         } : null,
         message: { 
           type: messageType, 
@@ -516,30 +562,8 @@ const handleOrdererContactChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       setIsSubmitting(false);
     }
   }
-  // 지점 데이터 디버깅을 위한 useEffect 추가
-  useEffect(() => {
-    if (selectedBranch) {
-      }
-  }, [selectedBranch]);
-  const handleBranchChange = (branchId: string) => {
-    // 먼저 관련 상태들을 초기화
-    setOrderItems([]);
-    setSelectedDistrict(null);
-    setSelectedMainCategory(null);
-    setSelectedMidCategory(null);
-    setSelectedCustomer(null);
-    setUsedPoints(0);
-    setSelectedDiscountRate(0);
-    setCustomDiscountRate(0);
-    if (!branchId) {
-      setSelectedBranch(null);
-      return;
-    }
-    const branch = branches.find(b => b.id === branchId);
-    if (branch) {
-      setSelectedBranch(branch);
-    }
-  };
+  // 단독샵이므로 지점 디버깅 코드 제거
+  // 단독샵이므로 지점 관련 기능 제거
 const handleCustomerSelect = (customer: Customer) => {
   setSelectedCustomer(customer);
   setOrdererName(customer.name);
@@ -635,11 +659,19 @@ const debouncedCustomerSearch = useCallback(
           }
           setDeliveryAddress(fullAddress);
           setDeliveryAddressDetail('');
-          const district = data.sigungu;
-          if(selectedBranch?.deliveryFees?.some(df => df.district === district)) {
+          
+          // 배송비 자동 계산이 활성화되어 있으면 자동으로 계산
+          if (deliveryFeeType === 'auto') {
+            const { fee, district } = calculateDeliveryFee(fullAddress);
+            setCalculatedDeliveryFee(fee);
             setSelectedDistrict(district);
-          } else {
-            setSelectedDistrict("기타");
+            
+            // 무료 배송 기준 확인
+            const freeThreshold = settings?.freeDeliveryThreshold || 0;
+            const subtotal = orderItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
+            if (freeThreshold > 0 && subtotal >= freeThreshold) {
+              setCalculatedDeliveryFee(0);
+            }
           }
         }
       }).open();
@@ -659,61 +691,15 @@ const debouncedCustomerSearch = useCallback(
   };
   const pageTitle = existingOrder ? '주문 수정' : '주문테이블';
   const pageDescription = existingOrder ? '기존 주문을 수정합니다.' : '새로운 주문을 등록합니다.';
-  const isLoading = ordersLoading || productsLoading || branchesLoading;
+  const isLoading = ordersLoading || productsLoading;
   return (
     <div>
         <PageHeader
           title={pageTitle}
           description={pageDescription}
         />
-        <Card className="mb-6">
-            <CardHeader>
-                <CardTitle>지점 선택</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4">
-                  {!selectedBranch ? (
-                    <div className="flex items-center gap-2">
-                        <Store className="h-5 w-5 text-muted-foreground" />
-                        <Select 
-                          onValueChange={handleBranchChange} 
-                          disabled={isLoading || !!existingOrder || !isAdmin}
-                        >
-                            <SelectTrigger id="branch-select" className="w-[300px]">
-                                <SelectValue placeholder={
-                                  isLoading ? "지점 불러오는 중..." : 
-                                  !isAdmin ? `${userBranch || '지점'} 자동 선택` : 
-                                  "지점 선택"
-                                } />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {availableBranches.filter(b => b.type !== '본사').map(branch => (
-                                    <SelectItem key={branch.id} value={branch.id}>
-                                        {branch.name}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-4">
-                      <div className="text-lg font-medium">
-                          <span className="text-primary">{selectedBranch.name}</span>
-                          {!isAdmin && (
-                            <Badge variant="secondary" className="ml-2">자동 선택</Badge>
-                          )}
-                      </div>
-                      {isAdmin && (
-                        <Button variant="outline" size="sm" onClick={() => handleBranchChange("")} disabled={!!existingOrder}>
-                            지점 변경
-                        </Button>
-                      )}
-                    </div>
-                  )}
-              </div>
-            </CardContent>
-        </Card>
-        <fieldset disabled={!selectedBranch || isLoading} className="disabled:opacity-50">
+        {/* 단독샵이므로 출고 지점 카드 제거 */}
+        <fieldset disabled={isLoading} className="disabled:opacity-50">
           <div className="grid gap-8 xl:grid-cols-3">
             <div className="xl:col-span-2">
               <Card>
@@ -1208,63 +1194,66 @@ const debouncedCustomerSearch = useCallback(
                                       </div>
                                       <div className="space-y-2">
                                           <Label htmlFor="delivery-fee-type">배송비</Label>
-                                          <RadioGroup value={deliveryFeeType} className="flex items-center gap-4" onValueChange={(value) => setDeliveryFeeType(value as "auto" | "manual")}>
+                                          <RadioGroup value={deliveryFeeType} onValueChange={(v) => setDeliveryFeeType(v as "auto" | "manual")} className="flex items-center gap-4 mt-2">
                                               <div className="flex items-center space-x-2">
-                                                  <RadioGroupItem value="auto" id="auto" />
-                                                  <Label htmlFor="auto">자동 계산</Label>
+                                                  <RadioGroupItem value="auto" id="delivery-fee-auto" />
+                                                  <Label htmlFor="delivery-fee-auto">자동 계산</Label>
                                               </div>
                                               <div className="flex items-center space-x-2">
-                                                  <RadioGroupItem value="manual" id="manual" />
-                                                  <Label htmlFor="manual">직접 입력</Label>
+                                                  <RadioGroupItem value="manual" id="delivery-fee-manual" />
+                                                  <Label htmlFor="delivery-fee-manual">직접 입력</Label>
                                               </div>
                                           </RadioGroup>
-                                          <div className="flex items-center gap-2 mt-2">
-                                              {deliveryFeeType === 'auto' ? (
-                                                  <div className="space-y-2 w-full">
-                                                      <Select onValueChange={setSelectedDistrict} value={selectedDistrict ?? ''} disabled={!selectedBranch}>
-                                                          <SelectTrigger id="selected-district">
-                                                              <SelectValue placeholder={!selectedBranch ? "지점을 먼저 선택하세요" : "지역 선택"} />
-                                                          </SelectTrigger>
-                                                          <SelectContent>
-                                                              {selectedBranch?.deliveryFees && selectedBranch.deliveryFees.length > 0 ? (
-                                                                  selectedBranch.deliveryFees.map(df => (
-                                                                      <SelectItem key={df.district} value={df.district}>
-                                                                          {df.district} - ₩{df.fee.toLocaleString()}
-                                                                      </SelectItem>
-                                                                  ))
-                                                              ) : (
-                                                                  <SelectItem value="no-data" disabled>
-                                                                      배송비 정보가 없습니다
-                                                                  </SelectItem>
-                                                              )}
-                                                          </SelectContent>
-                                                      </Select>
-                                                      {selectedDistrict && selectedBranch?.deliveryFees && (
-                                                          <div className="text-xs text-green-600 bg-green-50 p-2 rounded border">
-                                                              ✅ 선택된 지역: {selectedDistrict} - ₩{deliveryFee.toLocaleString()}
+                                          
+                                          {deliveryFeeType === 'auto' && (
+                                              <div className="space-y-2">
+                                                  {selectedDistrict ? (
+                                                      <div className="bg-green-50 p-3 rounded-lg border border-green-200">
+                                                          <div className="flex items-center justify-between">
+                                                              <span className="text-sm font-medium text-green-800">
+                                                                  선택된 지역: {selectedDistrict} - ₩{calculatedDeliveryFee.toLocaleString()}
+                                                              </span>
+                                                              <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
+                                                                  <span className="text-white text-xs">✓</span>
+                                                              </div>
                                                           </div>
-                                                      )}
-                                                      {(!selectedBranch?.deliveryFees || selectedBranch.deliveryFees.length === 0) && (
-                                                          <div className="text-xs text-amber-600 bg-amber-50 p-2 rounded border">
-                                                              ⚠️ 이 지점에는 배송비 정보가 설정되지 않았습니다. 직접 입력을 사용하세요.
-                                                          </div>
-                                                      )}
-                                                  </div>
-                                              ) : (
-                                                  <div className="flex items-center gap-2">
-                                                      <span className="text-sm">₩</span>
-                                                      <Input
-                                                          id="manual-delivery-fee"
-                                                          type="number"
-                                                          name="manual-delivery-fee"
-                                                          placeholder="배송비 입력"
-                                                          value={manualDeliveryFee}
-                                                          onChange={(e) => setManualDeliveryFee(Number(e.target.value))}
-                                                          className="w-32"
-                                                      />
-                                                  </div>
-                                              )}
-                                          </div>
+                                                      </div>
+                                                  ) : deliveryAddress ? (
+                                                      <div className="bg-yellow-50 p-3 rounded-lg border border-yellow-200">
+                                                          <span className="text-sm text-yellow-800">
+                                                              해당 지역의 배송비 정보가 없습니다.
+                                                          </span>
+                                                      </div>
+                                                  ) : (
+                                                      <div className="bg-gray-50 p-3 rounded-lg border border-gray-200">
+                                                          <span className="text-sm text-gray-600">
+                                                              배송지 주소를 입력하면 자동으로 배송비가 계산됩니다.
+                                                          </span>
+                                                      </div>
+                                                  )}
+                                              </div>
+                                          )}
+                                          
+                                          {deliveryFeeType === 'manual' && (
+                                              <div className="flex items-center gap-2 mt-2">
+                                                  <span className="text-sm">₩</span>
+                                                  <Input
+                                                      id="manual-delivery-fee"
+                                                      type="number"
+                                                      name="manual-delivery-fee"
+                                                      placeholder="배송비 입력"
+                                                      value={manualDeliveryFee}
+                                                      onChange={(e) => setManualDeliveryFee(Number(e.target.value))}
+                                                      className="w-32"
+                                                  />
+                                              </div>
+                                          )}
+                                          
+                                          {settings?.freeDeliveryThreshold && settings.freeDeliveryThreshold > 0 && (
+                                              <p className="text-xs text-muted-foreground">
+                                                  {settings.freeDeliveryThreshold.toLocaleString()}원 이상 주문 시 무료 배송
+                                              </p>
+                                          )}
                                       </div>
                                   </CardContent>
                               </Card>
@@ -1319,56 +1308,47 @@ const debouncedCustomerSearch = useCallback(
                             <span>상품 합계</span>
                             <span>₩{orderSummary.subtotal.toLocaleString()}</span>
                         </div>
-                        {/* 할인율 선택 */}
-                        {selectedBranch && canApplyDiscount(selectedBranch.id, orderSummary.subtotal) && (
-                          <>
-                            <div className="space-y-2">
-                              <Label>할인율 선택</Label>
-                              <div className="grid grid-cols-2 gap-2">
-                                {getActiveDiscountRates(selectedBranch.id).map((rate) => (
-                                  <Button
-                                    key={rate.rate}
-                                    variant={selectedDiscountRate === rate.rate ? "default" : "outline"}
-                                    size="sm"
-                                    onClick={() => {
-                                      setSelectedDiscountRate(rate.rate);
-                                      setCustomDiscountRate(0);
-                                    }}
-                                    className="text-xs"
-                                  >
-                                    {rate.label}
-                                  </Button>
-                                ))}
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Input
-                                  type="number"
-                                  placeholder="수동 할인율"
-                                  value={customDiscountRate}
-                                  onChange={(e) => {
-                                    const value = Number(e.target.value);
-                                    setCustomDiscountRate(Math.min(Math.max(0, value), 50));
-                                    if (value > 0) setSelectedDiscountRate(0);
-                                  }}
-                                  min="0"
-                                  max="50"
-                                  className="w-20"
-                                />
-                                <span className="text-sm text-muted-foreground">% (최대 50%)</span>
-                              </div>
+                        {/* 할인율 선택 - 단독샵 */}
+                        <div className="space-y-2">
+                          <Label>할인율 선택</Label>
+                          <div className="flex items-center gap-2">
+                            <Input
+                              type="number"
+                              placeholder="수동 할인율"
+                              value={customDiscountRate}
+                              onChange={(e) => {
+                                const value = Number(e.target.value);
+                                setCustomDiscountRate(Math.min(Math.max(0, value), 50));
+                                if (value > 0) setSelectedDiscountRate(0);
+                              }}
+                              min="0"
+                              max="50"
+                              className="w-20"
+                            />
+                            <span className="text-sm text-muted-foreground">% (최대 50%)</span>
+                          </div>
+                          {(selectedDiscountRate > 0 || customDiscountRate > 0) && (
+                            <div className="flex justify-between text-green-600">
+                              <span>할인 금액</span>
+                              <span>-₩{orderSummary.discountAmount.toLocaleString()}</span>
                             </div>
-                            {(selectedDiscountRate > 0 || customDiscountRate > 0) && (
-                              <div className="flex justify-between text-green-600">
-                                <span>할인 금액</span>
-                                <span>-₩{orderSummary.discountAmount.toLocaleString()}</span>
-                              </div>
-                            )}
-                          </>
-                        )}
+                          )}
+                        </div>
                         <div className="flex justify-between">
                             <span>배송비</span>
-                            <span>₩{deliveryFee.toLocaleString()}</span>
+                            <span className={deliveryFee === 0 ? "text-green-600 font-medium" : ""}>
+                              {deliveryFee === 0 ? "무료" : `₩${deliveryFee.toLocaleString()}`}
+                            </span>
                         </div>
+                        {settings?.freeDeliveryThreshold && settings.freeDeliveryThreshold > 0 && (
+                          <div className="text-xs text-muted-foreground">
+                            {orderSummary.subtotal >= settings.freeDeliveryThreshold ? (
+                              <span className="text-green-600">✓ 무료 배송 기준 달성</span>
+                            ) : (
+                              <span>무료 배송까지 {((settings.freeDeliveryThreshold - orderSummary.subtotal) / 1000).toFixed(0)}천원 더</span>
+                            )}
+                          </div>
+                        )}
                         <Separator />
                         <div className="space-y-2">
                             <Label htmlFor="used-points">포인트 사용</Label>

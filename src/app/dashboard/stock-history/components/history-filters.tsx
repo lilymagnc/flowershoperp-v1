@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
 import { CalendarIcon, Search } from "lucide-react";
 import { DateRange } from "react-day-picker";
 import { format } from "date-fns";
-import type { Branch } from "@/hooks/use-branches";
+
 export interface StockHistoryFiltersState {
     dateRange: DateRange;
     branch: string;
@@ -22,9 +22,8 @@ export interface StockHistoryFiltersState {
 interface HistoryFiltersProps {
     filters: StockHistoryFiltersState;
     onFiltersChange: React.Dispatch<React.SetStateAction<StockHistoryFiltersState>>;
-    branches: Branch[];
 }
-export function HistoryFilters({ filters, onFiltersChange, branches }: HistoryFiltersProps) {
+export function HistoryFilters({ filters, onFiltersChange }: HistoryFiltersProps) {
     const handleFilterChange = (key: keyof StockHistoryFiltersState, value: any) => {
         onFiltersChange(prev => ({ ...prev, [key]: value }));
     };
@@ -75,7 +74,7 @@ export function HistoryFilters({ filters, onFiltersChange, branches }: HistoryFi
                 </SelectTrigger>
                 <SelectContent>
                     <SelectItem value="all">모든 지점</SelectItem>
-                    {branches.map(branch => (
+                    {[{ name: '메인매장', id: 'main' }].map(branch => (
                         <SelectItem key={branch.id} value={branch.name}>
                             {branch.name}
                         </SelectItem>

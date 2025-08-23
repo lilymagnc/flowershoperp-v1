@@ -5,6 +5,11 @@ rules_version = '2';
 //    /databases/(default)/documents/users/$(request.auth.uid)).data.isAdmin;
 service firebase.storage {
   match /b/{bucket}/o {
+    // 브랜드 에셋 (로고, 파비콘) - 인증된 사용자만
+    match /brand-assets/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null;
+    }
+    
     // 샘플 앨범 관련 파일들 - 인증된 사용자만
     match /sample-albums/{albumId}/{allPaths=**} {
       allow read, write: if request.auth != null;

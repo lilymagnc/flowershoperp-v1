@@ -1,6 +1,6 @@
 
 "use client";
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth, db } from '@/lib/firebase';
@@ -11,7 +11,8 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { Loader2, Eye, EyeOff } from 'lucide-react';
 import Image from 'next/image';
-import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+
 export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -19,6 +20,27 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [brandLogo, setBrandLogo] = useState('https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg');
+
+  // 브랜드 설정 로드
+  useEffect(() => {
+    const loadBrandSettings = async () => {
+      try {
+        const settingsDoc = await getDoc(doc(db, 'system', 'settings'));
+        if (settingsDoc.exists()) {
+          const settings = settingsDoc.data();
+          if (settings.brandLogo) {
+            setBrandLogo(settings.brandLogo);
+          }
+        }
+      } catch (error) {
+        console.log('브랜드 설정 로드 실패 (기본 로고 사용):', error);
+      }
+    };
+
+    loadBrandSettings();
+  }, []);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -93,7 +115,7 @@ export default function LoginPage() {
       <Card className="mx-auto w-full max-w-sm">
         <div className="flex justify-center py-6">
             <Image 
-              src="https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg" 
+              src={brandLogo} 
               alt="Logo" 
               width={200} 
               height={50}

@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Recipient } from "@/hooks/use-recipients";
-import { useBranches } from "@/hooks/use-branches";
+
 import { User, Phone, Mail, MapPin, Building } from "lucide-react";
 
 interface RecipientEditDialogProps {
@@ -21,7 +21,7 @@ interface RecipientEditDialogProps {
 
 export function RecipientEditDialog({ isOpen, onOpenChange, recipient, onSave }: RecipientEditDialogProps) {
   const { toast } = useToast();
-  const { branches } = useBranches();
+
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -163,7 +163,7 @@ export function RecipientEditDialog({ isOpen, onOpenChange, recipient, onSave }:
                       <SelectValue placeholder="지점을 선택하세요" />
                     </SelectTrigger>
                     <SelectContent>
-                      {branches.map((branch) => (
+                      {[{ name: '메인매장', id: 'main' }].map((branch) => (
                         <SelectItem key={branch.id} value={branch.name}>
                           {branch.name}
                         </SelectItem>

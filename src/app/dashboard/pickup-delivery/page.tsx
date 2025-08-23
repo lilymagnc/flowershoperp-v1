@@ -7,17 +7,21 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useOrders, Order } from "@/hooks/use-orders";
+import { useDeliveryFees } from "@/hooks/use-delivery-fees";
 import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { useBranches } from "@/hooks/use-branches";
+
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Timestamp } from "firebase/firestore";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useSimpleExpenses } from "@/hooks/use-simple-expenses";
+import { SimpleExpenseCategory } from "@/types/simple-expense";
+import { usePartners } from "@/hooks/use-partners";
 import { OrderDetailDialog } from "./components/order-detail-dialog";
 import { DeliveryPhotoUpload } from "@/components/delivery-photo-upload";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from "@/components/ui/dialog";
@@ -31,11 +35,13 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 
 export default function PickupDeliveryPage() {
   const { orders, loading, updateOrderStatus, updateOrder, completeDelivery } = useOrders();
-  const { branches, loading: branchesLoading, updateBranch } = useBranches();
+  const { deliveryFees, loading: deliveryFeesLoading, updateDeliveryFee } = useDeliveryFees();
   const { user } = useAuth();
   const { toast } = useToast();
+  const { addExpense } = useSimpleExpenses();
+  const { partners, addPartner } = usePartners();
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState("all");
+
   const [activeTab, setActiveTab] = useState("pickup");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -80,21 +86,94 @@ export default function PickupDeliveryPage() {
   const isAdmin = user?.role === '본사 관리자';
   const userBranch = user?.franchise;
 
-  // 사용자가 볼 수 있는 지점 목록
-  const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 관리자는 모든 지점
-    } else {
-      return branches.filter(branch => branch.name === userBranch); // 직원은 소속 지점만
+  // 배송기사 소속을 거래처에 자동 등록하는 함수
+  const ensurePartnerExists = async (driverAffiliation: string, driverName?: string, driverContact?: string) => {
+    if (!driverAffiliation || driverAffiliation === '운송업체') return;
+    
+    try {
+      // 이미 등록된 거래처인지 확인
+      const existingPartner = partners.find(partner => 
+        partner.name === driverAffiliation || 
+        partner.contactPerson === driverName ||
+        partner.phone === driverContact
+      );
+      
+      if (!existingPartner) {
+        // 새로운 거래처로 등록
+        const partnerData = {
+          name: driverAffiliation,
+          type: '운송업체',
+          contactPerson: driverName || '',
+          phone: driverContact || '',
+          email: '',
+          address: '',
+          businessNumber: '',
+          ceoName: '',
+          bankAccount: '',
+          items: '배송 서비스',
+          memo: `자동 등록된 배송업체 - ${driverName ? `기사: ${driverName}` : ''} ${driverContact ? `연락처: ${driverContact}` : ''}`,
+        };
+        
+        await addPartner(partnerData);
+      }
+    } catch (error) {
+      console.error('거래처 자동 등록 오류:', error);
+      // 오류가 발생해도 배송비 지출 생성은 계속 진행
     }
-  }, [branches, isAdmin, userBranch]);
+  };
 
-  // 직원의 경우 자동으로 소속 지점으로 필터링
-  useEffect(() => {
-    if (!isAdmin && userBranch && selectedBranch === "all") {
-      setSelectedBranch(userBranch);
+  // 배송비 자동 지출 생성 함수
+  const createDeliveryExpense = async (order: Order, actualCost: number) => {
+    try {
+      // 단일 매장 시스템이므로 지점 정보 확인 불필요
+
+      // 배송기사 소속을 구매처로 사용 (없으면 기본값)
+      const supplier = order.deliveryInfo?.driverAffiliation || '운송업체';
+      
+      // 배송기사 소속을 거래처에 자동 등록
+      await ensurePartnerExists(
+        order.deliveryInfo?.driverAffiliation || '',
+        order.deliveryInfo?.driverName,
+        order.deliveryInfo?.driverContact
+      );
+      
+      // 메모에 배송기사 정보 포함
+      const driverInfo = order.deliveryInfo?.driverName && order.deliveryInfo?.driverContact 
+        ? `, 배송기사: ${order.deliveryInfo.driverName} (${order.deliveryInfo.driverContact})`
+        : '';
+
+      // 간편지출 데이터 생성
+      const expenseData = {
+        date: Timestamp.now(),
+        category: SimpleExpenseCategory.TRANSPORT,
+        subCategory: 'DELIVERY',
+        description: `배송비 - ${order.orderer.name} (${order.id})`,
+        amount: actualCost,
+        supplier: supplier,
+        quantity: 1,
+        unitPrice: actualCost,
+        memo: `주문번호: ${order.id}, 고객: ${order.orderer.name}, 배송지: ${order.deliveryInfo?.address || '주소 없음'}${driverInfo}`,
+        branchId: 'main',
+        branchName: '메인매장',
+        isAutoGenerated: true,
+        relatedOrderId: order.id,
+        createdAt: Timestamp.now(),
+        createdBy: user?.uid || 'unknown',
+      };
+
+      await addExpense(expenseData, 'main', '메인매장');
+    } catch (error) {
+      console.error('배송비 자동 지출 생성 오류:', error);
+      // 오류가 발생해도 주문 업데이트는 계속 진행
     }
-  }, [isAdmin, userBranch, selectedBranch]);
+  };
+
+  // 단일 매장 시스템
+  const availableBranches = useMemo(() => {
+    return [{ name: '메인매장', id: 'main' }];
+  }, []);
+
+
 
   // 날짜 필터링 함수
   const isDateInRange = (dateString: string, startDate?: Date, endDate?: Date) => {
@@ -116,12 +195,7 @@ export default function PickupDeliveryPage() {
       order.status !== 'canceled'
     );
     
-    // 권한에 따른 지점 필터링
-    if (!isAdmin && userBranch) {
-      filteredOrders = filteredOrders.filter(order => order.branchName === userBranch);
-    } else if (selectedBranch !== 'all') {
-      filteredOrders = filteredOrders.filter(order => order.branchName === selectedBranch);
-    }
+    // 단독 매장이므로 지점 필터링 제거
     
     // 검색어 필터링
     if (searchTerm) {
@@ -154,7 +228,7 @@ export default function PickupDeliveryPage() {
       const bDate = b.pickupInfo?.date || '';
       return aDate.localeCompare(bDate);
     });
-  }, [orders, selectedBranch, searchTerm, isAdmin, userBranch, startDate, endDate, dateFilterType]);
+  }, [orders, searchTerm, startDate, endDate, dateFilterType]);
 
   // 배송 주문 필터링 (예약 주문만)
   const deliveryOrders = useMemo(() => {
@@ -163,12 +237,7 @@ export default function PickupDeliveryPage() {
       order.status !== 'canceled'
     );
     
-    // 권한에 따른 지점 필터링
-    if (!isAdmin && userBranch) {
-      filteredOrders = filteredOrders.filter(order => order.branchName === userBranch);
-    } else if (selectedBranch !== 'all') {
-      filteredOrders = filteredOrders.filter(order => order.branchName === selectedBranch);
-    }
+    // 단독 매장이므로 지점 필터링 제거
     
     // 검색어 필터링
     if (searchTerm) {
@@ -201,19 +270,14 @@ export default function PickupDeliveryPage() {
       const bDate = b.deliveryInfo?.date || '';
       return aDate.localeCompare(bDate);
     });
-  }, [orders, selectedBranch, searchTerm, isAdmin, userBranch, startDate, endDate, dateFilterType]);
+  }, [orders, searchTerm, startDate, endDate, dateFilterType]);
   // 배송 주문 필터링 (배송비 관리용 - 완료 전 주문도 포함)
   const completedDeliveryOrders = useMemo(() => {
     let filteredOrders = orders.filter(order => 
       order.receiptType === 'delivery_reservation' && 
       (order.status === 'completed' || order.status === 'processing')
     );
-    // 권한에 따른 지점 필터링
-    if (!isAdmin && userBranch) {
-      filteredOrders = filteredOrders.filter(order => order.branchName === userBranch);
-    } else if (selectedBranch !== 'all') {
-      filteredOrders = filteredOrders.filter(order => order.branchName === selectedBranch);
-    }
+    // 단독 매장이므로 지점 필터링 제거
     
     // 검색어 필터링
     if (searchTerm) {
@@ -243,7 +307,7 @@ export default function PickupDeliveryPage() {
       const bDate = b.orderDate?.toDate?.() || new Date(b.orderDate as any);
       return bDate.getTime() - aDate.getTime();
     });
-  }, [orders, selectedBranch, searchTerm, isAdmin, userBranch, startDate, endDate, dateFilterType]);
+  }, [orders, searchTerm, startDate, endDate, dateFilterType]);
   // 배송비 분석 데이터 계산
   const deliveryCostAnalytics = useMemo(() => {
     const ordersWithCost = completedDeliveryOrders.filter(order => 
@@ -351,32 +415,24 @@ export default function PickupDeliveryPage() {
   }, [completedDeliveryOrders]);
   // 배송비 설정 관련 함수들
   const handleOpenDeliveryFeeSettings = (branchName: string) => {
-    const branch = branches.find(b => b.name === branchName);
-    if (branch) {
-      setSelectedBranchForSettings(branchName);
-      setEditingDeliveryFees(branch.deliveryFees || []);
-      setSurcharges({
-        mediumItem: branch.surcharges?.mediumItem || 0,
-        largeItem: branch.surcharges?.largeItem || 0,
-        express: branch.surcharges?.express || 0
-      });
-      // 편집 모드 초기화
-      setEditingIndex(null);
-      setEditingDistrict('');
-      setEditingFee('');
-      setIsDeliveryFeeSettingsOpen(true);
-    }
+    setSelectedBranchForSettings(branchName);
+    // 단일 매장 시스템이므로 기본값 사용
+    setEditingDeliveryFees([]);
+    setSurcharges({
+      mediumItem: 0,
+      largeItem: 0,
+      express: 0
+    });
+    // 편집 모드 초기화
+    setEditingIndex(null);
+    setEditingDistrict('');
+    setEditingFee('');
+    setIsDeliveryFeeSettingsOpen(true);
   };
   const handleSaveDeliveryFeeSettings = async () => {
     try {
-      const branch = branches.find(b => b.name === selectedBranchForSettings);
-      if (!branch) return;
-      const updatedBranch = {
-        ...branch,
-        deliveryFees: editingDeliveryFees,
-        surcharges
-      };
-      await updateBranch(branch.id, updatedBranch);
+      if (!selectedBranchForSettings) return;
+      // 단일 매장 시스템이므로 로컬 스토리지에 저장하거나 간단한 처리
       toast({
         title: '성공',
         description: '배송비 설정이 저장되었습니다.',
@@ -533,6 +589,9 @@ export default function PickupDeliveryPage() {
         updateData.deliveryCostUpdatedAt = new Date();
         updateData.deliveryCostUpdatedBy = user?.email || 'unknown';
         updateData.deliveryProfit = (order.summary?.deliveryFee || 0) - actualCost;
+        
+        // 배송비 자동 지출 생성
+        await createDeliveryExpense(order, actualCost);
       }
       await updateOrder(editingDriverInfo.orderId, updateData);
       toast({
@@ -604,6 +663,9 @@ export default function PickupDeliveryPage() {
         deliveryCostReason: deliveryCostReason,
         deliveryProfit: (selectedOrderForCost.summary?.deliveryFee || 0) - actualCost,
       });
+      
+      // 배송비 자동 지출 생성
+      await createDeliveryExpense(selectedOrderForCost, actualCost);
       toast({
         title: '완료',
         description: '배송비가 입력되었습니다.',
@@ -646,7 +708,7 @@ export default function PickupDeliveryPage() {
     setSelectedOrder(order);
     setIsDialogOpen(true);
   };
-  if (loading || branchesLoading) {
+  if (loading || deliveryFeesLoading) {
     return (
       <div className="space-y-6">
         <PageHeader title="픽업/배송 관리" description="픽업 및 배송 현황을 관리합니다." />
@@ -658,21 +720,20 @@ export default function PickupDeliveryPage() {
       </div>
     );
   }
+
+
   return (
     <div className="space-y-6">
       <PageHeader 
         title="픽업/배송예약관리" 
-        description={`픽업 및 배송 예약 현황을 관리하고 처리 상태를 업데이트합니다.${!isAdmin ? ` (${userBranch})` : ''}`}
+        description="픽업 및 배송 예약 현황을 관리하고 처리 상태를 업데이트합니다."
       />
+      
+
       {/* 필터 섹션 */}
       <Card>
         <CardHeader>
           <CardTitle>필터</CardTitle>
-          {!isAdmin && (
-            <CardDescription>
-              현재 {userBranch} 지점의 주문만 표시됩니다.
-            </CardDescription>
-          )}
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -686,21 +747,7 @@ export default function PickupDeliveryPage() {
                   className="max-w-sm"
                 />
               </div>
-              {isAdmin && (
-                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="지점 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">모든 지점</SelectItem>
-                    {availableBranches.map((branch) => (
-                      <SelectItem key={branch.id} value={branch.name}>
-                        {branch.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
+
               <Button
                 variant="outline"
                 onClick={() => setIsExportDialogOpen(true)}
@@ -908,7 +955,6 @@ export default function PickupDeliveryPage() {
                       <TableHead>픽업자</TableHead>
                       <TableHead>픽업 예정일시</TableHead>
                       <TableHead>연락처</TableHead>
-                      <TableHead>지점</TableHead>
                       <TableHead>상태</TableHead>
                       <TableHead>금액</TableHead>
                       <TableHead className="text-center">작업</TableHead>
@@ -941,7 +987,6 @@ export default function PickupDeliveryPage() {
                               {order.pickupInfo?.pickerContact || '-'}
                             </div>
                           </TableCell>
-                          <TableCell>{order.branchName}</TableCell>
                           <TableCell>{getStatusBadge(order.status)}</TableCell>
                           <TableCell>₩{order.summary.total.toLocaleString()}</TableCell>
                           <TableCell className="text-center">
@@ -966,7 +1011,7 @@ export default function PickupDeliveryPage() {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center h-24 text-muted-foreground">
+                        <TableCell colSpan={8} className="text-center h-24 text-muted-foreground">
                           <div className="space-y-2">
                             <p>픽업 예약 주문이 없습니다.</p>
                             <p className="text-sm text-muted-foreground">
@@ -1004,7 +1049,6 @@ export default function PickupDeliveryPage() {
                       <TableHead>배송지</TableHead>
                       <TableHead>배송기사</TableHead>
                       <TableHead>배송비</TableHead>
-                      <TableHead>지점</TableHead>
                       <TableHead>상태</TableHead>
                       <TableHead>금액</TableHead>
                       <TableHead className="text-center">작업</TableHead>
@@ -1090,7 +1134,6 @@ export default function PickupDeliveryPage() {
                               <span className="text-muted-foreground text-sm">미입력</span>
                             )}
                           </TableCell>
-                          <TableCell>{order.branchName}</TableCell>
                           <TableCell>{getStatusBadge(order.status)}</TableCell>
                           <TableCell>₩{order.summary.total.toLocaleString()}</TableCell>
                           <TableCell className="text-center">
@@ -1153,7 +1196,7 @@ export default function PickupDeliveryPage() {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={12} className="text-center h-24 text-muted-foreground">
+                        <TableCell colSpan={11} className="text-center h-24 text-muted-foreground">
                           <div className="space-y-2">
                             <p>배송 예약 주문이 없습니다.</p>
                             <p className="text-sm text-muted-foreground">
@@ -1177,31 +1220,32 @@ export default function PickupDeliveryPage() {
                  <DollarSign className="w-5 h-5" />
                  배송비 관리
                </CardTitle>
-               <CardDescription>
-                 배송 완료된 주문의 실제 배송비를 입력하고 배송비 수익성을 분석합니다.
-               </CardDescription>
+                               <CardDescription>
+                  배송 완료된 주문의 배송비 정보를 조회하고 배송비 수익성을 분석합니다.
+                </CardDescription>
              </CardHeader>
              <CardContent>
                <div className="space-y-6">
                  {/* 배송비 입력 섹션 */}
                  <div>
-                   <h3 className="text-lg font-semibold mb-4">배송비 입력</h3>
+                                       <h3 className="text-lg font-semibold mb-4">배송비 현황</h3>
                    {completedDeliveryOrders.length > 0 ? (
                      <div className="overflow-x-auto">
                        <Table>
-                         <TableHeader>
-                           <TableRow>
-                             <TableHead>주문번호</TableHead>
-                             <TableHead>주문자</TableHead>
-                             <TableHead>수령자</TableHead>
-                             <TableHead>배송지</TableHead>
-                             <TableHead>고객 배송비</TableHead>
-                             <TableHead>실제 배송비</TableHead>
-                             <TableHead>배송비 차익</TableHead>
-                             <TableHead>상태</TableHead>
-                             <TableHead className="text-center">작업</TableHead>
-                           </TableRow>
-                         </TableHeader>
+                                                   <TableHeader>
+                            <TableRow>
+                              <TableHead>주문번호</TableHead>
+                              <TableHead>주문자</TableHead>
+                              <TableHead>수령자</TableHead>
+                              <TableHead>배송지</TableHead>
+                              <TableHead>배송기사</TableHead>
+                              <TableHead>고객 배송비</TableHead>
+                              <TableHead>실제 배송비</TableHead>
+                              <TableHead>배송비 차익</TableHead>
+                                                             <TableHead>상태</TableHead>
+                               <TableHead className="text-center">비고</TableHead>
+                            </TableRow>
+                          </TableHeader>
                          <TableBody>
                            {completedDeliveryOrders.map((order) => (
                              <TableRow key={order.id}>
@@ -1212,17 +1256,30 @@ export default function PickupDeliveryPage() {
                                <TableCell>
                                  {order.deliveryInfo?.recipientName || '-'}
                                </TableCell>
-                               <TableCell>
-                                 <div className="flex items-center gap-1 max-w-[200px]">
-                                   <MapPin className="w-3 h-3 flex-shrink-0" />
-                                   <span className="truncate" title={order.deliveryInfo?.address}>
-                                     {order.deliveryInfo?.address || '-'}
-                                   </span>
-                                 </div>
-                               </TableCell>
-                               <TableCell>
-                                 ₩{(order.summary?.deliveryFee || 0).toLocaleString()}
-                               </TableCell>
+                                                               <TableCell>
+                                  <div className="flex items-center gap-1 max-w-[200px]">
+                                    <MapPin className="w-3 h-3 flex-shrink-0" />
+                                    <span className="truncate" title={order.deliveryInfo?.address}>
+                                      {order.deliveryInfo?.address || '-'}
+                                    </span>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="space-y-1">
+                                    <div className="text-xs">
+                                      <strong>소속:</strong> {order.deliveryInfo?.driverAffiliation || '-'}
+                                    </div>
+                                    <div className="text-xs">
+                                      <strong>이름:</strong> {order.deliveryInfo?.driverName || '-'}
+                                    </div>
+                                    <div className="text-xs">
+                                      <strong>연락처:</strong> {order.deliveryInfo?.driverContact || '-'}
+                                    </div>
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  ₩{(order.summary?.deliveryFee || 0).toLocaleString()}
+                                </TableCell>
                                <TableCell>
                                  {order.actualDeliveryCost ? (
                                    `₩${order.actualDeliveryCost.toLocaleString()}`
@@ -1246,17 +1303,11 @@ export default function PickupDeliveryPage() {
                                    <Badge variant="secondary">미입력</Badge>
                                  )}
                                </TableCell>
-                               <TableCell className="text-center">
-                                 {!order.actualDeliveryCost && (
-                                   <Button
-                                     size="sm"
-                                     variant="outline"
-                                     onClick={() => handleDeliveryCostInput(order)}
-                                   >
-                                     배송비 입력
-                                   </Button>
-                                 )}
-                               </TableCell>
+                                                                                               <TableCell className="text-center">
+                                   <div className="text-sm text-muted-foreground">
+                                     조회 전용
+                                   </div>
+                                 </TableCell>
                              </TableRow>
                            ))}
                          </TableBody>
@@ -1415,25 +1466,18 @@ export default function PickupDeliveryPage() {
                  <div>
                    <h3 className="text-lg font-semibold mb-4">배송비 설정</h3>
                    <div className="space-y-4">
-                     <div className="grid gap-4 md:grid-cols-2">
+                     <div className="grid gap-4 md:grid-cols-1">
                        {availableBranches.map(branch => (
                          <Card key={branch.name}>
-                           <CardHeader className="pb-2">
-                             <CardTitle className="text-sm font-medium">{branch.name}</CardTitle>
-                           </CardHeader>
                            <CardContent>
                              <div className="space-y-2">
                                <div className="flex justify-between text-sm">
                                  <span>지역별 배송비:</span>
-                                 <span>{branch.deliveryFees?.length || 0}개 지역</span>
+                                 <span>0개 지역</span>
                                </div>
                                <div className="flex justify-between text-sm">
                                  <span>추가 요금:</span>
-                                 <span>
-                                   {branch.surcharges?.mediumItem ? `중간품목 +₩${branch.surcharges.mediumItem.toLocaleString()}` : '없음'}
-                                   {branch.surcharges?.largeItem ? `, 대형품목 +₩${branch.surcharges.largeItem.toLocaleString()}` : ''}
-                                   {branch.surcharges?.express ? `, 긴급 +₩${branch.surcharges.express.toLocaleString()}` : ''}
-                                 </span>
+                                 <span>없음</span>
                                </div>
                                <Button 
                                  variant="outline" 
@@ -1714,9 +1758,9 @@ export default function PickupDeliveryPage() {
        }}>
          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
            <DialogHeader>
-             <DialogTitle>{selectedBranchForSettings} 배송비 설정</DialogTitle>
+             <DialogTitle>배송비 설정</DialogTitle>
              <DialogDescription>
-               지점별 지역 배송비와 추가 요금을 설정할 수 있습니다. 설정한 배송비는 해당 지점의 배송 주문에 적용됩니다.
+               지역별 배송비와 추가 요금을 설정할 수 있습니다. 설정한 배송비는 배송 주문에 적용됩니다.
              </DialogDescription>
            </DialogHeader>
            <div className="space-y-6">

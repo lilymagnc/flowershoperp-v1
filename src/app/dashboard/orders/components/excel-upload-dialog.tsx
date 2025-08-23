@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useOrders } from "@/hooks/use-orders";
-import { useBranches } from "@/hooks/use-branches";
+
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle, XCircle, Download, Trash2, RefreshCw } from "lucide-react";
 import * as XLSX from "xlsx";
 import { Timestamp } from "firebase/firestore";
@@ -56,7 +56,7 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
   const [deleting, setDeleting] = useState(false);
   const { toast } = useToast();
   const { addOrder, deleteOrder } = useOrders();
-  const { branches } = useBranches();
+
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -117,7 +117,7 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
 
   const convertToOrderFormat = (excelData: ExcelOrderData) => {
     // 지점 ID 찾기
-    const branch = branches.find(b => b.name === excelData.branchName);
+          const branch = { name: '메인매장', id: 'main' };
     if (!branch) {
       throw new Error(`지점을 찾을 수 없습니다: ${excelData.branchName}`);
     }

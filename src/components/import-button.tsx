@@ -28,6 +28,7 @@ export function ImportButton({ resourceName = "데이터", onImport, children, t
                 onOpenChange={setIsDialogOpen}
                 resourceName={resourceName}
                 onImport={onImport}
+                fileName={fileName}
             />
         </>
     )

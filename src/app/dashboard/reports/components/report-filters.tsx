@@ -23,12 +23,11 @@ import type {
   ExpenseCategory
 } from '@/hooks/use-reports';
 import { EXPENSE_CATEGORY_LABELS } from '@/types/expense';
-import { useBranches } from '@/hooks/use-branches';
+
 interface ReportFiltersProps {
   filters: ReportFilter;
   onChange: (filters: ReportFilter) => void;
 }
-// 지점 목록은 useBranches 훅에서 가져옴
 // 부서 목록
 const departments = [
   { id: 'dept-001', name: '영업팀' },
@@ -37,7 +36,6 @@ const departments = [
   { id: 'dept-004', name: '운영팀' },
 ];
 export function ReportFilters({ filters, onChange }: ReportFiltersProps) {
-  const { branches } = useBranches();
   const [tempFilters, setTempFilters] = useState<ReportFilter>(filters);
   // 날짜 범위 프리셋
   const datePresets = [
@@ -83,7 +81,6 @@ export function ReportFilters({ filters, onChange }: ReportFiltersProps) {
     const defaultFilters: ReportFilter = {
       dateFrom: new Date(new Date().getFullYear(), new Date().getMonth(), 1),
       dateTo: new Date(),
-      branchIds: [],
       departmentIds: [],
       categories: [],
       userIds: []
@@ -99,15 +96,7 @@ export function ReportFilters({ filters, onChange }: ReportFiltersProps) {
       ...dates
     }));
   };
-  // 지점 선택 토글
-  const toggleBranch = (branchId: string) => {
-    setTempFilters(prev => ({
-      ...prev,
-      branchIds: prev.branchIds?.includes(branchId)
-        ? prev.branchIds.filter(id => id !== branchId)
-        : [...(prev.branchIds || []), branchId]
-    }));
-  };
+
   // 부서 선택 토글
   const toggleDepartment = (departmentId: string) => {
     setTempFilters(prev => ({
@@ -179,34 +168,7 @@ export function ReportFilters({ filters, onChange }: ReportFiltersProps) {
       </div>
       {/* 필터 옵션 */}
       <div className="flex flex-wrap gap-2">
-        {/* 지점 필터 */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="flex items-center gap-2">
-              <Building className="h-4 w-4" />
-              지점 ({tempFilters.branchIds?.length || 0})
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-64">
-            <div className="space-y-3">
-              <h4 className="font-medium">지점 선택</h4>
-              <div className="space-y-2">
-                {branches.map((branch) => (
-                  <div key={branch.id} className="flex items-center space-x-2">
-                    <Checkbox
-                      id={branch.id}
-                      checked={tempFilters.branchIds?.includes(branch.id) || false}
-                      onCheckedChange={() => toggleBranch(branch.id)}
-                    />
-                    <Label htmlFor={branch.id} className="text-sm">
-                      {branch.name}
-                    </Label>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </PopoverContent>
-        </Popover>
+
         {/* 부서 필터 */}
         <Popover>
           <PopoverTrigger asChild>
@@ -265,20 +227,8 @@ export function ReportFilters({ filters, onChange }: ReportFiltersProps) {
         </Popover>
       </div>
       {/* 선택된 필터 표시 */}
-      {(tempFilters.branchIds?.length || tempFilters.departmentIds?.length || tempFilters.categories?.length) ? (
+      {(tempFilters.departmentIds?.length || tempFilters.categories?.length) ? (
         <div className="flex flex-wrap gap-2">
-          {tempFilters.branchIds?.map(branchId => {
-            const branch = branches.find(b => b.id === branchId);
-            return branch ? (
-              <div key={branchId} className="flex items-center gap-1 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
-                <Building className="h-3 w-3" />
-                {branch.name}
-                <button onClick={() => toggleBranch(branchId)}>
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : null;
-          })}
           {tempFilters.departmentIds?.map(deptId => {
             const dept = departments.find(d => d.id === deptId);
             return dept ? (

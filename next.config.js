@@ -1,5 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+    // 서버 설정
+    server: {
+        port: 9002,
+        hostname: '0.0.0.0',
+    },
+    
     // 빌드 최적화
     typescript: {
         ignoreBuildErrors: true,

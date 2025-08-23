@@ -29,7 +29,6 @@ export type Material = {
   status: string;
   size: string;
   color: string;
-  branch: string;
 };
 interface MaterialTableProps {
   materials: Material[];
@@ -38,10 +37,9 @@ interface MaterialTableProps {
   onDelete: (docId: string) => void;
   selectedMaterials?: string[];
   isAdmin?: boolean;
-  onRefresh?: () => void; // 새로 추가
 }
 
-export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, onRefresh }: MaterialTableProps) {
+export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, selectedMaterials, isAdmin }: MaterialTableProps) {
   const router = useRouter();
   const [isStockFormOpen, setIsStockFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
@@ -109,8 +107,7 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
   };
 
   const getStatus = (status: string, stock: number) => {
-    if (status === 'out_of_stock' || stock === 0) return { text: '품절', variant: 'destructive' as const };
-    if (status === 'low_stock' || stock < 20) return { text: '재고 부족', variant: 'secondary' as const };
+    if (status === 'low_stock' || stock < 5) return { text: '재고 부족', variant: 'secondary' as const };
     return { text: '입고중', variant: 'default' as const };
   }
 
@@ -133,7 +130,6 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
                 <TableHead>상태</TableHead>
                 <TableHead className="hidden md:table-cell">카테고리</TableHead>
                 <TableHead className="hidden sm:table-cell">가격</TableHead>
-                <TableHead className="hidden md:table-cell">소속 지점</TableHead>
                 <TableHead className="text-right">재고</TableHead>
                 <TableHead>
                   <span className="sr-only">작업</span>
@@ -179,7 +175,6 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
                   </TableCell>
                   <TableCell className="hidden md:table-cell cursor-pointer" onClick={() => handleRowClick(material)}>{material.mainCategory} &gt; {material.midCategory}</TableCell>
                   <TableCell className="hidden sm:table-cell cursor-pointer" onClick={() => handleRowClick(material)}>₩{material.price.toLocaleString()}</TableCell>
-                  <TableCell className="hidden md:table-cell cursor-pointer" onClick={() => handleRowClick(material)}>{material.branch}</TableCell>
                   <TableCell className="text-right cursor-pointer" onClick={() => handleRowClick(material)}>{material.stock}</TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <AlertDialog>
@@ -205,7 +200,7 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
                         <AlertDialogHeader>
                           <AlertDialogTitle>정말로 삭제하시겠습니까?</AlertDialogTitle>
                           <AlertDialogDescription>
-                           이 작업은 되돌릴 수 없습니다. '{material.name || '자재'}' ({material.branch || '지점 없음'}) 자재 데이터가 서버에서 영구적으로 삭제됩니다.
+                           이 작업은 되돌릴 수 없습니다. '{material.name || '자재'}' 자재 데이터가 서버에서 영구적으로 삭제됩니다.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
@@ -223,7 +218,7 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
                 </TableRow>
               )}) : (
                 <TableRow>
-                  <TableCell colSpan={9} className="h-24 text-center">
+                  <TableCell colSpan={8} className="h-24 text-center">
                     조회된 자재가 없습니다.
                   </TableCell>
                 </TableRow>
@@ -237,7 +232,6 @@ export function MaterialTable({ materials, onSelectionChange, onEdit, onDelete, 
         isOpen={isStockFormOpen} 
         onOpenChange={handleCloseForms} 
         material={selectedMaterial}
-        onStockUpdated={onRefresh} // 콜백 함수 전달
       />}
       {selectedMaterial && (
         <PrintOptionsDialog

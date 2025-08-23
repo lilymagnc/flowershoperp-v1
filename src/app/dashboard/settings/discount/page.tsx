@@ -9,7 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { PageHeader } from "@/components/page-header";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { useBranches } from "@/hooks/use-branches";
+
 import { useDiscountSettings } from "@/hooks/use-discount-settings";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -32,7 +32,7 @@ const DEFAULT_DISCOUNT_RATES: DiscountRate[] = [
 ];
 export default function DiscountSettingsPage() {
   const { user } = useAuth();
-  const { branches } = useBranches();
+
   const { discountSettings, updateGlobalSettings, updateBranchSettings } = useDiscountSettings();
   const { toast } = useToast();
   // 권한 확인
@@ -264,7 +264,7 @@ export default function DiscountSettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
-          {branches.filter(branch => branch.type !== '본사').map((branch) => {
+                          {[{ name: '메인매장', id: 'main', type: 'branch' }].map((branch) => {
             const branchSetting = branchSettings[branch.id];
             const isActive = branchSetting?.isActive || false;
             return (

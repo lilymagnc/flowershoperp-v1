@@ -1,166 +1,282 @@
 import * as XLSX from 'xlsx';
-interface SheetData {
+import { saveAs } from 'file-saver';
+import { ChecklistRecord, ChecklistTemplate } from '@/types/checklist';
+import { SimpleExpense } from '@/types/simple-expense';
+import { format } from 'date-fns';
+import { ko } from 'date-fns/locale';
+
+// Product 인터페이스 정의
+interface Product {
+  id: string;
+  docId: string;
   name: string;
-  data: any[];
+  mainCategory: string;
+  midCategory: string;
+  price: number;
+  supplier: string;
+  stock: number;
+  size: string;
+  color: string;
+  branch: string;
+  code?: string;
+  category?: string;
+  status: string;
 }
-export const exportToExcel = async (sheets: SheetData[], filename: string) => {
-  try {
-    // 워크북 생성
-    const workbook = XLSX.utils.book_new();
-    // 각 시트 추가
-    let hasValidSheet = false;
-    sheets.forEach(sheet => {
-      if (sheet.data.length > 0) {
-        hasValidSheet = true;
-        // 워크시트 생성
-        const worksheet = XLSX.utils.json_to_sheet(sheet.data);
-        // 열 너비 자동 조정
-        const columnWidths = [];
-        const headers = Object.keys(sheet.data[0]);
-        headers.forEach((header, index) => {
-          const maxLength = Math.max(
-            header.length,
-            ...sheet.data.map(row => String(row[header]).length)
-          );
-          columnWidths[index] = { width: Math.min(maxLength + 2, 50) };
-        });
-        worksheet['!cols'] = columnWidths;
-        // 워크북에 시트 추가
-        XLSX.utils.book_append_sheet(workbook, worksheet, sheet.name);
-      }
+
+// 단일 체크리스트를 엑셀로 내보내기
+export const exportSingleChecklist = (
+  checklist: ChecklistRecord, 
+  template?: ChecklistTemplate
+) => {
+  // 워크북 생성
+  const wb = XLSX.utils.book_new();
+  
+  // 체크리스트 기본 정보
+  const basicInfo = [
+    ['체크리스트 정보'],
+    [''],
+    ['날짜', checklist.date],
+    ['카테고리', checklist.category === 'daily' ? '일일' : checklist.category === 'weekly' ? '주간' : '월간'],
+    ['담당자', checklist.responsiblePerson || '미입력'],
+    ['오픈 담당자', checklist.openWorker || '미입력'],
+    ['마감 담당자', checklist.closeWorker || '미입력'],
+    ['상태', checklist.status === 'completed' ? '완료' : checklist.status === 'partial' ? '진행중' : '대기'],
+    ['메모', checklist.notes || ''],
+    ['날씨', checklist.weather || ''],
+    ['특별 이벤트', checklist.specialEvents || ''],
+    [''],
+  ];
+
+  // 체크리스트 항목 데이터
+  const itemsData = [
+    ['체크리스트 항목'],
+    [''],
+    ['순서', '항목명', '상태', '체크 시간', '비고']
+  ];
+
+  checklist.items.forEach((item, index) => {
+    const templateItem = template?.items.find(t => t.id === item.itemId);
+         itemsData.push([
+       String(index + 1),
+       templateItem?.title || `항목 ${item.itemId}`,
+       item.checked ? '완료' : '미완료',
+       item.checkedAt ? format(item.checkedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '',
+       templateItem?.required ? '필수' : '선택'
+     ]);
+  });
+
+  // 완료율 계산
+  let completionRate = 0;
+  if (template) {
+    const requiredItems = template.items.filter(item => item.required && item.category === checklist.category);
+    const requiredItemIds = requiredItems.map(item => item.id);
+    const completedRequiredItems = checklist.items.filter(item => 
+      item.checked && requiredItemIds.includes(item.itemId)
+    ).length;
+    completionRate = requiredItemIds.length > 0 ? (completedRequiredItems / requiredItemIds.length) * 100 : 0;
+  } else {
+    const totalItems = checklist.items.length;
+    const completedItems = checklist.items.filter(item => item.checked).length;
+    completionRate = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+  }
+
+  const summaryData = [
+    [''],
+    ['요약 정보'],
+    [''],
+    ['총 항목 수', checklist.items.length],
+    ['완료 항목 수', checklist.items.filter(item => item.checked).length],
+    ['완료율', `${completionRate.toFixed(1)}%`],
+    ['생성일', checklist.completedAt ? format(checklist.completedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '']
+  ];
+
+  // 모든 데이터를 하나의 배열로 합치기
+  const allData = [...basicInfo, ...itemsData, ...summaryData];
+
+  // 워크시트 생성
+  const ws = XLSX.utils.aoa_to_sheet(allData);
+
+  // 열 너비 설정
+  ws['!cols'] = [
+    { width: 15 }, // 순서
+    { width: 40 }, // 항목명
+    { width: 12 }, // 상태
+    { width: 20 }, // 체크 시간
+    { width: 15 }  // 비고
+  ];
+
+  // 워크북에 워크시트 추가
+  const sheetName = `${checklist.category === 'daily' ? '일일' : checklist.category === 'weekly' ? '주간' : '월간'}체크리스트`;
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+
+  // 파일명 생성
+  const fileName = `체크리스트_${checklist.date}_${checklist.category === 'daily' ? '일일' : checklist.category === 'weekly' ? '주간' : '월간'}.xlsx`;
+
+  // 파일 다운로드
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/octet-stream' });
+  saveAs(blob, fileName);
+};
+
+// 여러 체크리스트를 하나의 엑셀 파일로 내보내기
+export const exportMultipleChecklists = (
+  checklists: ChecklistRecord[],
+  templates: Record<string, ChecklistTemplate>
+) => {
+  // 워크북 생성
+  const wb = XLSX.utils.book_new();
+
+  // 각 체크리스트를 별도 시트로 추가
+  checklists.forEach((checklist, index) => {
+    const template = templates[checklist.branchId];
+    
+    // 체크리스트 기본 정보
+    const basicInfo = [
+      ['체크리스트 정보'],
+      [''],
+      ['날짜', checklist.date],
+      ['카테고리', checklist.category === 'daily' ? '일일' : checklist.category === 'weekly' ? '주간' : '월간'],
+      ['담당자', checklist.responsiblePerson || '미입력'],
+      ['오픈 담당자', checklist.openWorker || '미입력'],
+      ['마감 담당자', checklist.closeWorker || '미입력'],
+      ['상태', checklist.status === 'completed' ? '완료' : checklist.status === 'partial' ? '진행중' : '대기'],
+      ['메모', checklist.notes || ''],
+      ['날씨', checklist.weather || ''],
+      ['특별 이벤트', checklist.specialEvents || ''],
+      [''],
+    ];
+
+    // 체크리스트 항목 데이터
+    const itemsData = [
+      ['체크리스트 항목'],
+      [''],
+      ['순서', '항목명', '상태', '체크 시간', '비고']
+    ];
+
+    checklist.items.forEach((item, itemIndex) => {
+      const templateItem = template?.items.find(t => t.id === item.itemId);
+           itemsData.push([
+       String(itemIndex + 1),
+       templateItem?.title || `항목 ${item.itemId}`,
+       item.checked ? '완료' : '미완료',
+       item.checkedAt ? format(item.checkedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '',
+       templateItem?.required ? '필수' : '선택'
+     ]);
     });
-    // 유효한 시트가 없으면 기본 시트 생성
-    if (!hasValidSheet && sheets.length > 0) {
-      const firstSheet = sheets[0];
-      const defaultData = [{
-        '메시지': '데이터가 없습니다.',
-        '생성일시': new Date().toLocaleString()
-      }];
-      const worksheet = XLSX.utils.json_to_sheet(defaultData);
-      XLSX.utils.book_append_sheet(workbook, worksheet, firstSheet.name);
+
+    // 완료율 계산
+    let completionRate = 0;
+    if (template) {
+      const requiredItems = template.items.filter(item => item.required && item.category === checklist.category);
+      const requiredItemIds = requiredItems.map(item => item.id);
+      const completedRequiredItems = checklist.items.filter(item => 
+        item.checked && requiredItemIds.includes(item.itemId)
+      ).length;
+      completionRate = requiredItemIds.length > 0 ? (completedRequiredItems / requiredItemIds.length) * 100 : 0;
+    } else {
+      const totalItems = checklist.items.length;
+      const completedItems = checklist.items.filter(item => item.checked).length;
+      completionRate = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
     }
-    // 파일 다운로드
-    const excelBuffer = XLSX.write(workbook, { 
-      bookType: 'xlsx', 
-      type: 'array' 
-    });
-    const blob = new Blob([excelBuffer], { 
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
-    });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
-  } catch (error) {
-    console.error('Excel 내보내기 오류:', error);
-    throw new Error('Excel 파일 생성에 실패했습니다.');
-  }
+
+    const summaryData = [
+      [''],
+      ['요약 정보'],
+      [''],
+      ['총 항목 수', checklist.items.length],
+      ['완료 항목 수', checklist.items.filter(item => item.checked).length],
+      ['완료율', `${completionRate.toFixed(1)}%`],
+      ['생성일', checklist.completedAt ? format(checklist.completedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '']
+    ];
+
+    // 모든 데이터를 하나의 배열로 합치기
+    const allData = [...basicInfo, ...itemsData, ...summaryData];
+
+    // 워크시트 생성
+    const ws = XLSX.utils.aoa_to_sheet(allData);
+
+    // 열 너비 설정
+    ws['!cols'] = [
+      { width: 15 }, // 순서
+      { width: 40 }, // 항목명
+      { width: 12 }, // 상태
+      { width: 20 }, // 체크 시간
+      { width: 15 }  // 비고
+    ];
+
+    // 시트명 생성 (중복 방지)
+    const baseSheetName = `${checklist.category === 'daily' ? '일일' : checklist.category === 'weekly' ? '주간' : '월간'}체크리스트`;
+    const sheetName = checklists.filter(c => c.category === checklist.category).length > 1 
+      ? `${baseSheetName}_${index + 1}` 
+      : baseSheetName;
+
+    // 워크북에 워크시트 추가
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+
+  // 파일명 생성
+  const today = format(new Date(), 'yyyy-MM-dd', { locale: ko });
+  const fileName = `체크리스트_통합_${today}.xlsx`;
+
+  // 파일 다운로드
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/octet-stream' });
+  saveAs(blob, fileName);
 };
-// 단일 시트용 간단한 내보내기 함수
-export const exportSingleSheet = async (data: any[], sheetName: string, filename: string) => {
-  await exportToExcel([{ name: sheetName, data }], filename);
-};
-// 주문 내역 엑셀 내보내기 (기존 호환성 유지)
-export const exportOrdersToExcel = async (orders: any[], filename: string) => {
-  try {
-    // 주문 데이터를 Excel 형식으로 변환
-    const excelData = orders.map(order => {
-      const orderDate = order.orderDate ? 
-        (typeof order.orderDate === 'object' && 'toDate' in order.orderDate) 
-          ? order.orderDate.toDate().toLocaleDateString()
-          : new Date(order.orderDate).toLocaleDateString()
-        : '';
-      return {
-        '주문일시': orderDate,
-        '지점명': order.branchName || '',
-        '주문상품': order.items?.map((item: any) => `${item.name || ''} (${item.quantity || 0}개)`).join(', ') || '',
-        '상품금액': (order.summary?.subtotal || 0).toLocaleString(),
-        '배송비': (order.summary?.deliveryFee || 0).toLocaleString(),
-        '결제수단': order.payment ? getPaymentMethodText(order.payment.method) : '',
-        '총금액': (order.summary?.total || 0).toLocaleString(),
-        '주문상태': getStatusText(order.status),
-        '결제상태': order.payment ? getPaymentStatusText(order.payment.status) : '',
-        '주문자명': order.orderer?.name || '',
-        '주문자연락처': order.orderer?.contact || '',
-        '주문자이메일': order.orderer?.email || '',
-        '수령방법': getReceiptTypeText(order.receiptType),
-        '픽업/배송일시': order.pickupInfo ? 
-          `${order.pickupInfo.date || ''} ${order.pickupInfo.time || ''}` : 
-          order.deliveryInfo ? `${order.deliveryInfo.date || ''} ${order.deliveryInfo.time || ''}` : '',
-        '수령인명': order.pickupInfo?.pickerName || order.deliveryInfo?.recipientName || '',
-        '수령인연락처': order.pickupInfo?.pickerContact || order.deliveryInfo?.recipientContact || '',
-        '배송주소': order.deliveryInfo?.address || '',
-        '메세지타입': order.message?.type || '',
-        '메세지내용': order.message?.content || '',
-        '요청사항': order.request || '',
-        '주문 ID': order.id || '',
-        '회사명': order.orderer?.company || '',
-        '주문유형': getOrderTypeText(order.orderType),
-        '상품수량': order.items?.reduce((total: number, item: any) => total + (item.quantity || 0), 0) || 0,
-        '할인': (order.summary?.discount || 0).toLocaleString(),
-        '포인트사용': (order.summary?.pointsUsed || 0).toLocaleString(),
-        '포인트적립': (order.summary?.pointsEarned || 0).toLocaleString(),
-        '고객등록여부': order.registerCustomer ? '예' : '아니오',
-        '익명주문': order.isAnonymous ? '예' : '아니오'
-      };
-    });
-    await exportToExcel([{ name: '주문내역', data: excelData }], filename);
-  } catch (error) {
-    console.error('주문 엑셀 내보내기 오류:', error);
-    throw new Error('주문 엑셀 파일 생성에 실패했습니다.');
-  }
-};
-// 상태 텍스트 변환 함수들
-const getStatusText = (status: string) => {
-  switch (status) {
-    case 'completed': return '완료';
-    case 'processing': return '처리중';
-    case 'canceled': return '취소';
-    default: return status || '';
-  }
-};
-const getPaymentStatusText = (status: string) => {
-  switch (status) {
-    case 'completed': return '완결';
-    case 'pending': return '미결';
-    default: return status || '';
-  }
-};
-const getPaymentMethodText = (method: string) => {
-  switch (method) {
-    case 'card': return '카드';
-    case 'cash': return '현금';
-    case 'transfer': return '계좌이체';
-    case 'mainpay': return '메인페이';
-    case 'shopping_mall': return '쇼핑몰';
-    case 'epay': return '이페이';
-    default: return method || '';
-  }
-};
-const getOrderTypeText = (type: string) => {
-  switch (type) {
-    case 'store': return '매장';
-    case 'phone': return '전화';
-    case 'naver': return '네이버';
-    case 'kakao': return '카카오';
-    case 'etc': return '기타';
-    default: return type || '';
-  }
-};
-const getReceiptTypeText = (type: string) => {
-  switch (type) {
-    case 'store_pickup': return '매장픽업';
-    case 'pickup_reservation': return '픽업예약';
-    case 'delivery_reservation': return '배송예약';
-    case 'pickup': return '픽업'; // 레거시 지원
-    case 'delivery': return '배송'; // 레거시 지원
-    default: return type || '';
-  }
+
+// 체크리스트 요약 정보를 엑셀로 내보내기
+export const exportChecklistSummary = (checklists: ChecklistRecord[]) => {
+  // 워크북 생성
+  const wb = XLSX.utils.book_new();
+
+  // 요약 데이터 생성
+  const summaryData = [
+    ['체크리스트 요약'],
+    [''],
+    ['날짜', '카테고리', '담당자', '완료율', '상태', '생성일']
+  ];
+
+  checklists.forEach(checklist => {
+    const totalItems = checklist.items.length;
+    const completedItems = checklist.items.filter(item => item.checked).length;
+    const completionRate = totalItems > 0 ? (completedItems / totalItems) * 100 : 0;
+
+    summaryData.push([
+      checklist.date,
+      checklist.category === 'daily' ? '일일' : checklist.category === 'weekly' ? '주간' : '월간',
+      checklist.responsiblePerson || '미입력',
+      `${completionRate.toFixed(1)}%`,
+      checklist.status === 'completed' ? '완료' : checklist.status === 'partial' ? '진행중' : '대기',
+      checklist.completedAt ? format(checklist.completedAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : ''
+    ]);
+  });
+
+  // 워크시트 생성
+  const ws = XLSX.utils.aoa_to_sheet(summaryData);
+
+  // 열 너비 설정
+  ws['!cols'] = [
+    { width: 15 }, // 날짜
+    { width: 12 }, // 카테고리
+    { width: 20 }, // 담당자
+    { width: 12 }, // 완료율
+    { width: 12 }, // 상태
+    { width: 20 }  // 생성일
+  ];
+
+  // 워크북에 워크시트 추가
+  XLSX.utils.book_append_sheet(wb, ws, '요약');
+
+  // 파일명 생성
+  const today = format(new Date(), 'yyyy-MM-dd', { locale: ko });
+  const fileName = `체크리스트_요약_${today}.xlsx`;
+
+  // 파일 다운로드
+  const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  const blob = new Blob([wbout], { type: 'application/octet-stream' });
+  saveAs(blob, fileName);
 }; 
+
 // 픽업/배송 예약 현황 엑셀 출력 함수
 export const exportPickupDeliveryToExcel = (
   orders: any[], 
@@ -174,6 +290,7 @@ export const exportPickupDeliveryToExcel = (
     const orderDateStr = orderDate.toISOString().split('T')[0];
     return orderDateStr >= startDate && orderDateStr <= endDate;
   });
+
   // 헤더 정의
   const headers = type === 'pickup' 
     ? [
@@ -185,6 +302,7 @@ export const exportPickupDeliveryToExcel = (
         '배송예정일', '배송예정시간', '배송지주소', '배송지역', '배송기사소속', '배송기사명', 
         '배송기사연락처', '지점명', '주문상태', '상품금액', '배송비', '실제배송비', '배송비차익', '총금액', '결제방법', '결제상태'
       ];
+
   // 데이터 변환
   const data = filteredOrders.map(order => {
     const orderDate = order.orderDate?.toDate?.() || new Date(order.orderDate);
@@ -195,12 +313,14 @@ export const exportPickupDeliveryToExcel = (
       hour: '2-digit',
       minute: '2-digit'
     });
+
     const baseData = [
       order.id,
       formattedOrderDate,
       order.orderer?.name || '-',
       order.orderer?.contact || '-',
     ];
+
     if (type === 'pickup') {
       return [
         ...baseData,
@@ -240,9 +360,11 @@ export const exportPickupDeliveryToExcel = (
       ];
     }
   });
+
   // 워크북 생성
   const workbook = XLSX.utils.book_new();
   const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+
   // 열 너비 설정
   const colWidths = type === 'pickup' 
     ? [
@@ -286,13 +408,17 @@ export const exportPickupDeliveryToExcel = (
         { width: 10 }, // 결제방법
         { width: 10 }, // 결제상태
       ];
+
   worksheet['!cols'] = colWidths;
+
   // 시트 이름 설정
   const sheetName = type === 'pickup' ? '픽업예약현황' : '배송예약현황';
   XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
   // 파일명 생성
   const typeText = type === 'pickup' ? '픽업예약' : '배송예약';
   const fileName = `${typeText}_현황_${startDate}_${endDate}.xlsx`;
+
   // 파일 다운로드
   const excelBuffer = XLSX.write(workbook, { 
     bookType: 'xlsx', 
@@ -311,30 +437,456 @@ export const exportPickupDeliveryToExcel = (
   window.URL.revokeObjectURL(url);
 }; 
 
-// 상품 데이터 엑셀 내보내기
-export const exportProductsToExcel = async (products: any[], filename: string) => {
-  try {
-    // 상품 데이터를 Excel 형식으로 변환 (가져오기와 일치하는 필드)
-    const excelData = products.map(product => {
-      return {
-        '상품코드': product.id || '',
-        '상품명': product.name || '',
-        '대분류': product.mainCategory || '',
-        '중분류': product.midCategory || '',
-        '가격': product.price || 0,
-        '공급업체': product.supplier || '',
-        '재고': product.stock || 0,
-        '규격': product.size || '',
-        '색상': product.color || '',
-        '지점': product.branch || '',
-        '카테고리': product.category || '',
-        '코드': product.id || '' // 상품코드와 동일하게 설정
-      };
+// 주문 내보내기 함수
+export const exportOrdersToExcel = (orders: any[], startDate?: string, endDate?: string) => {
+  // 날짜 필터링 (선택사항)
+  let filteredOrders = orders;
+  if (startDate && endDate) {
+    filteredOrders = orders.filter(order => {
+      const orderDate = order.orderDate?.toDate?.() || new Date(order.orderDate);
+      const orderDateStr = orderDate.toISOString().split('T')[0];
+      return orderDateStr >= startDate && orderDateStr <= endDate;
+    });
+  }
+
+  // 헤더 정의
+  const headers = [
+    '주문번호', '주문일시', '지점명', '주문자명', '주문자연락처', '주문상태',
+    '상품명', '수량', '단가', '상품금액', '배송비', '총금액',
+    '결제방법', '결제상태', '픽업예정일', '픽업예정시간', '배송예정일', '배송예정시간',
+    '배송지주소', '수령자명', '수령자연락처', '메모', '생성일'
+  ];
+
+  // 데이터 변환
+  const data = filteredOrders.map(order => {
+    const orderDate = order.orderDate?.toDate?.() || new Date(order.orderDate);
+    const formattedOrderDate = orderDate.toLocaleString('ko-KR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
     });
 
-    await exportToExcel([{ name: '상품목록', data: excelData }], filename);
-  } catch (error) {
-    console.error('상품 엑셀 내보내기 오류:', error);
-    throw new Error('상품 엑셀 파일 생성에 실패했습니다.');
+    // 상품 정보 (첫 번째 상품만 표시, 나머지는 별도 행으로)
+    const firstItem = order.items?.[0];
+    const itemName = firstItem ? firstItem.name : '-';
+    const itemQuantity = firstItem ? firstItem.quantity : 0;
+    const itemPrice = firstItem ? firstItem.price : 0;
+    const itemTotal = firstItem ? firstItem.total : 0;
+
+    return [
+      order.id,
+      formattedOrderDate,
+      order.branchName || '-',
+      order.orderer?.name || '-',
+      order.orderer?.contact || '-',
+      order.status || '-',
+      itemName,
+      itemQuantity,
+      itemPrice.toLocaleString(),
+      itemTotal.toLocaleString(),
+      (order.summary?.deliveryFee || 0).toLocaleString(),
+      (order.summary?.total || 0).toLocaleString(),
+      order.payment?.method || '-',
+      order.payment?.status || '-',
+      order.pickupInfo?.date || '-',
+      order.pickupInfo?.time || '-',
+      order.deliveryInfo?.date || '-',
+      order.deliveryInfo?.time || '-',
+      order.deliveryInfo?.address || '-',
+      order.deliveryInfo?.recipientName || '-',
+      order.deliveryInfo?.recipientContact || '-',
+      order.memo || '-',
+      order.createdAt ? format(order.createdAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '-'
+    ];
+  });
+
+  // 추가 상품이 있는 경우 별도 행으로 추가
+  const additionalRows: any[] = [];
+  filteredOrders.forEach(order => {
+    if (order.items && order.items.length > 1) {
+      for (let i = 1; i < order.items.length; i++) {
+        const item = order.items[i];
+        additionalRows.push([
+          order.id,
+          '', // 주문일시는 첫 번째 행에만 표시
+          '', // 지점명
+          '', // 주문자명
+          '', // 주문자연락처
+          '', // 주문상태
+          item.name,
+          item.quantity,
+          item.price.toLocaleString(),
+          item.total.toLocaleString(),
+          '', // 배송비
+          '', // 총금액
+          '', // 결제방법
+          '', // 결제상태
+          '', // 픽업예정일
+          '', // 픽업예정시간
+          '', // 배송예정일
+          '', // 배송예정시간
+          '', // 배송지주소
+          '', // 수령자명
+          '', // 수령자연락처
+          '', // 메모
+          ''  // 생성일
+        ]);
+      }
+    }
+  });
+
+  // 모든 데이터 합치기
+  const allData = [headers, ...data, ...additionalRows];
+
+  // 워크북 생성
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.aoa_to_sheet(allData);
+
+  // 열 너비 설정
+  worksheet['!cols'] = [
+    { width: 15 }, // 주문번호
+    { width: 20 }, // 주문일시
+    { width: 12 }, // 지점명
+    { width: 12 }, // 주문자명
+    { width: 15 }, // 주문자연락처
+    { width: 10 }, // 주문상태
+    { width: 30 }, // 상품명
+    { width: 8 },  // 수량
+    { width: 12 }, // 단가
+    { width: 12 }, // 상품금액
+    { width: 10 }, // 배송비
+    { width: 12 }, // 총금액
+    { width: 10 }, // 결제방법
+    { width: 10 }, // 결제상태
+    { width: 12 }, // 픽업예정일
+    { width: 10 }, // 픽업예정시간
+    { width: 12 }, // 배송예정일
+    { width: 10 }, // 배송예정시간
+    { width: 30 }, // 배송지주소
+    { width: 12 }, // 수령자명
+    { width: 15 }, // 수령자연락처
+    { width: 20 }, // 메모
+    { width: 20 }  // 생성일
+  ];
+
+  // 시트 이름 설정
+  XLSX.utils.book_append_sheet(workbook, worksheet, '주문내역');
+
+  // 파일명 생성
+  const today = format(new Date(), 'yyyy-MM-dd', { locale: ko });
+  const fileName = startDate && endDate 
+    ? `주문내역_${startDate}_${endDate}.xlsx`
+    : `주문내역_${today}.xlsx`;
+
+  // 파일 다운로드
+  const excelBuffer = XLSX.write(workbook, { 
+    bookType: 'xlsx', 
+    type: 'array' 
+  });
+  const blob = new Blob([excelBuffer], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+};
+
+// 간편지출 내보내기 함수
+export const exportToExcel = (expenses: SimpleExpense[], startDate?: string, endDate?: string) => {
+  // 날짜 필터링 (선택사항)
+  let filteredExpenses = expenses;
+  if (startDate && endDate) {
+    filteredExpenses = expenses.filter(expense => {
+      const expenseDate = expense.date && typeof expense.date === 'object' && 'toDate' in expense.date ? 
+        expense.date.toDate() : new Date(expense.date);
+      const expenseDateStr = expenseDate.toISOString().split('T')[0];
+      return expenseDateStr >= startDate && expenseDateStr <= endDate;
+    });
   }
-}; 
+
+  // 헤더 정의
+  const headers = [
+    '날짜', '카테고리', '항목', '금액', '지점명', '담당자', '메모', '생성일'
+  ];
+
+  // 데이터 변환
+  const data = filteredExpenses.map(expense => {
+    const expenseDate = expense.date && typeof expense.date === 'object' && 'toDate' in expense.date ? 
+      expense.date.toDate() : new Date(expense.date);
+    const formattedDate = format(expenseDate, 'yyyy-MM-dd', { locale: ko });
+
+    return [
+      formattedDate,
+      expense.category || '-',
+      expense.description || '-',
+      expense.amount?.toLocaleString() || '0',
+      expense.branchName || '-',
+      expense.supplier || '-',
+      expense.description || '-',
+      expense.createdAt && typeof expense.createdAt === 'object' && 'toDate' in expense.createdAt ? 
+        format(expense.createdAt.toDate(), 'yyyy-MM-dd HH:mm', { locale: ko }) : '-'
+    ];
+  });
+
+  // 워크북 생성
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+
+  // 열 너비 설정
+  worksheet['!cols'] = [
+    { width: 12 }, // 날짜
+    { width: 15 }, // 카테고리
+    { width: 25 }, // 항목
+    { width: 12 }, // 금액
+    { width: 15 }, // 지점명
+    { width: 15 }, // 담당자
+    { width: 30 }, // 메모
+    { width: 20 }  // 생성일
+  ];
+
+  // 시트 이름 설정
+  XLSX.utils.book_append_sheet(workbook, worksheet, '간편지출');
+
+  // 파일명 생성
+  const today = format(new Date(), 'yyyy-MM-dd', { locale: ko });
+  const fileName = startDate && endDate 
+    ? `간편지출_${startDate}_${endDate}.xlsx`
+    : `간편지출_${today}.xlsx`;
+
+  // 파일 다운로드
+  const excelBuffer = XLSX.write(workbook, { 
+    bookType: 'xlsx', 
+    type: 'array' 
+  });
+  const blob = new Blob([excelBuffer], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
+  saveAs(blob, fileName);
+};
+
+// 상품 내보내기 함수
+export const exportProductsToExcel = (products: Product[], startDate?: string, endDate?: string) => {
+  // 헤더 정의
+  const headers = [
+    '상품코드', '상품명', '대분류', '중분류', '가격', '공급업체', '재고', '사이즈', '색상', '상태'
+  ];
+
+  // 데이터 변환
+  const data = products.map(product => {
+    const statusText = product.status === 'active' ? '판매중' : 
+                      product.status === 'low_stock' ? '재고부족' : product.status;
+
+    return [
+      product.code || product.id || '-',
+      product.name || '-',
+      product.mainCategory || '-',
+      product.midCategory || '-',
+      product.price?.toLocaleString() || '0',
+      product.supplier || '-',
+      product.stock?.toString() || '0',
+      product.size || '-',
+      product.color || '-',
+      statusText
+    ];
+  });
+
+  // 워크북 생성
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+
+  // 열 너비 설정
+  worksheet['!cols'] = [
+    { width: 15 }, // 상품코드
+    { width: 30 }, // 상품명
+    { width: 15 }, // 대분류
+    { width: 15 }, // 중분류
+    { width: 12 }, // 가격
+    { width: 20 }, // 공급업체
+    { width: 10 }, // 재고
+    { width: 10 }, // 사이즈
+    { width: 12 }, // 색상
+    { width: 12 }  // 상태
+  ];
+
+  // 시트 이름 설정
+  XLSX.utils.book_append_sheet(workbook, worksheet, '상품목록');
+
+  // 파일명 생성
+  const today = format(new Date(), 'yyyy-MM-dd', { locale: ko });
+  const fileName = startDate && endDate 
+    ? `상품목록_${startDate}_${endDate}.xlsx`
+    : `상품목록_${today}.xlsx`;
+
+  // 파일 다운로드
+  const excelBuffer = XLSX.write(workbook, { 
+    bookType: 'xlsx', 
+    type: 'array' 
+  });
+  const blob = new Blob([excelBuffer], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
+  saveAs(blob, fileName);
+};
+
+// 상품 템플릿 생성 함수
+export const generateProductTemplate = () => {
+  // 헤더 정의 (내보내기와 동일)
+  const headers = [
+    '상품코드', '상품명', '대분류', '중분류', '가격', '공급업체', '재고', '사이즈', '색상', '상태'
+  ];
+
+  // 샘플 데이터
+  const sampleData = [
+    ['PROD001', '장미 꽃다발', '꽃다발', '장미', '25000', '꽃공급업체A', '50', 'M', '빨강', '활성'],
+    ['PROD002', '튤립 꽃다발', '꽃다발', '튤립', '30000', '꽃공급업체B', '30', 'L', '노랑', '활성'],
+    ['PROD003', '화분', '화분', '다육식물', '15000', '화분공급업체C', '20', 'S', '초록', '활성']
+  ];
+
+  // 워크북 생성
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
+
+  // 열 너비 설정 (내보내기와 동일)
+  worksheet['!cols'] = [
+    { width: 15 }, // 상품코드
+    { width: 30 }, // 상품명
+    { width: 15 }, // 대분류
+    { width: 15 }, // 중분류
+    { width: 12 }, // 가격
+    { width: 20 }, // 공급업체
+    { width: 10 }, // 재고
+    { width: 10 }, // 사이즈
+    { width: 12 }, // 색상
+    { width: 12 }  // 상태
+  ];
+
+  // 시트 이름 설정
+  XLSX.utils.book_append_sheet(workbook, worksheet, '상품목록');
+
+  // 파일 다운로드
+  const excelBuffer = XLSX.write(workbook, { 
+    bookType: 'xlsx', 
+    type: 'array' 
+  });
+  const blob = new Blob([excelBuffer], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
+  saveAs(blob, 'products_template.xlsx');
+};
+
+// 자재 내보내기 함수
+export const exportMaterialsToExcel = (materials: any[], startDate?: string, endDate?: string) => {
+  // 헤더 정의
+  const headers = [
+    '자재코드', '자재명', '대분류', '중분류', '가격', '공급업체', '재고', '사이즈', '색상', '상태'
+  ];
+
+  // 데이터 변환
+  const data = materials.map(material => {
+    const statusText = material.status === 'active' ? '입고중' : 
+                      material.status === 'low_stock' ? '재고부족' : material.status;
+
+    return [
+      material.code || material.id || '-',
+      material.name || '-',
+      material.mainCategory || '-',
+      material.midCategory || '-',
+      material.price?.toLocaleString() || '0',
+      material.supplier || '-',
+      material.stock?.toString() || '0',
+      material.size || '-',
+      material.color || '-',
+      statusText
+    ];
+  });
+
+  // 워크북 생성
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...data]);
+
+  // 열 너비 설정
+  worksheet['!cols'] = [
+    { width: 15 }, // 자재코드
+    { width: 30 }, // 자재명
+    { width: 15 }, // 대분류
+    { width: 15 }, // 중분류
+    { width: 12 }, // 가격
+    { width: 20 }, // 공급업체
+    { width: 10 }, // 재고
+    { width: 10 }, // 사이즈
+    { width: 12 }, // 색상
+    { width: 12 }  // 상태
+  ];
+
+  // 시트 이름 설정
+  XLSX.utils.book_append_sheet(workbook, worksheet, '자재목록');
+
+  // 파일명 생성
+  const today = format(new Date(), 'yyyy-MM-dd', { locale: ko });
+  const fileName = startDate && endDate 
+    ? `자재목록_${startDate}_${endDate}.xlsx`
+    : `자재목록_${today}.xlsx`;
+
+  // 파일 다운로드
+  const excelBuffer = XLSX.write(workbook, { 
+    bookType: 'xlsx', 
+    type: 'array' 
+  });
+  const blob = new Blob([excelBuffer], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
+  saveAs(blob, fileName);
+};
+
+// 자재 템플릿 생성 함수
+export const generateMaterialTemplate = () => {
+  // 헤더 정의 (내보내기와 동일)
+  const headers = [
+    '자재코드', '자재명', '대분류', '중분류', '가격', '공급업체', '재고', '사이즈', '색상', '상태'
+  ];
+
+  // 샘플 데이터
+  const sampleData = [
+    ['MAT001', '플라스틱 용기', '포장재', '용기', '5000', '포장공급업체A', '100', 'M', '투명', '활성'],
+    ['MAT002', '종이 박스', '포장재', '박스', '3000', '포장공급업체B', '50', 'L', '갈색', '활성'],
+    ['MAT003', '테이프', '포장재', '테이프', '2000', '포장공급업체C', '200', 'S', '투명', '활성']
+  ];
+
+  // 워크북 생성
+  const workbook = XLSX.utils.book_new();
+  const worksheet = XLSX.utils.aoa_to_sheet([headers, ...sampleData]);
+
+  // 열 너비 설정 (내보내기와 동일)
+  worksheet['!cols'] = [
+    { width: 15 }, // 자재코드
+    { width: 30 }, // 자재명
+    { width: 15 }, // 대분류
+    { width: 15 }, // 중분류
+    { width: 12 }, // 가격
+    { width: 20 }, // 공급업체
+    { width: 10 }, // 재고
+    { width: 10 }, // 사이즈
+    { width: 12 }, // 색상
+    { width: 12 }  // 상태
+  ];
+
+  // 시트 이름 설정
+  XLSX.utils.book_append_sheet(workbook, worksheet, '자재목록');
+
+  // 파일 다운로드
+  const excelBuffer = XLSX.write(workbook, { 
+    bookType: 'xlsx', 
+    type: 'array' 
+  });
+  const blob = new Blob([excelBuffer], { 
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+  });
+  saveAs(blob, 'materials_template.xlsx');
+};

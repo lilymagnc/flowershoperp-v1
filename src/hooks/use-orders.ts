@@ -217,9 +217,7 @@ export function useOrders() {
             }
             const currentStock = productDoc.data().stock || 0;
             const newStock = currentStock - item.quantity;
-            if (newStock < 0) {
-              throw new Error(`재고 부족: '${item.name}'의 재고가 부족하여 주문을 완료할 수 없습니다. (현재 재고: ${currentStock})`);
-            }
+            
             transaction.update(productDocRef, { stock: newStock });
             const historyDocRef = doc(collection(db, "stockHistory"));
             historyBatch.set(historyDocRef, {
@@ -275,6 +273,33 @@ export function useOrders() {
     try {
         const orderRef = doc(db, 'orders', orderId);
         await updateDoc(orderRef, { status: newStatus });
+        
+        // 주문이 완료되면 해당하는 캘린더 이벤트 상태를 'completed'로 변경
+        if (newStatus === 'completed') {
+          try {
+            const calendarEventsRef = collection(db, 'calendarEvents');
+            const calendarQuery = query(
+              calendarEventsRef,
+              where('relatedId', '==', orderId)
+            );
+            const calendarSnapshot = await getDocs(calendarQuery);
+            
+            // 관련된 캘린더 이벤트 상태를 'completed'로 변경
+            const updatePromises = calendarSnapshot.docs.map(doc => 
+              updateDoc(doc.ref, { 
+                status: 'completed',
+                updatedAt: Timestamp.now()
+              })
+            );
+            await Promise.all(updatePromises);
+            
+            console.log(`${calendarSnapshot.docs.length}개의 캘린더 이벤트가 완료 상태로 변경되었습니다.`);
+          } catch (calendarError) {
+            console.error('캘린더 이벤트 상태 변경 중 오류:', calendarError);
+            // 캘린더 이벤트 상태 변경 실패는 주문 상태 변경을 막지 않음
+          }
+        }
+        
         toast({
             title: '상태 변경 성공',
             description: `주문 상태가 '${newStatus}'(으)로 변경되었습니다.`,
@@ -445,7 +470,7 @@ export function useOrders() {
         // 시스템 설정 가져오기 (실제로는 useSettings에서 가져와야 함)
         const settings = {
           autoEmailDeliveryComplete: true,
-          siteName: '릴리맥 플라워샵',
+          siteName: '플라워샵', // TODO: useSettings에서 동적으로 가져오기
           emailTemplateDeliveryComplete: `안녕하세요 {고객명}님!
 
 주문하신 상품이 성공적으로 배송 완료되었습니다.
@@ -468,6 +493,30 @@ export function useOrders() {
           settings as any,
           completionPhotoUrl
         );
+      }
+
+      // 주문이 완료되면 해당하는 캘린더 이벤트 상태를 'completed'로 변경
+      try {
+        const calendarEventsRef = collection(db, 'calendarEvents');
+        const calendarQuery = query(
+          calendarEventsRef,
+          where('relatedId', '==', orderId)
+        );
+        const calendarSnapshot = await getDocs(calendarQuery);
+        
+        // 관련된 캘린더 이벤트 상태를 'completed'로 변경
+        const updatePromises = calendarSnapshot.docs.map(doc => 
+          updateDoc(doc.ref, { 
+            status: 'completed',
+            updatedAt: Timestamp.now()
+          })
+        );
+        await Promise.all(updatePromises);
+        
+        console.log(`${calendarSnapshot.docs.length}개의 캘린더 이벤트가 완료 상태로 변경되었습니다.`);
+      } catch (calendarError) {
+        console.error('캘린더 이벤트 상태 변경 중 오류:', calendarError);
+        // 캘린더 이벤트 상태 변경 실패는 배송완료 처리를 막지 않음
       }
 
       // 주문 목록 새로고침

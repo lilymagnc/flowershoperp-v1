@@ -60,7 +60,7 @@ interface BudgetFormProps {
 }
 // 지점 목록 (실제로는 API에서 가져와야 함)
 const branches = [
-  { id: 'branch-001', name: '릴리맥광화문점' },
+          { id: 'branch-001', name: '메인매장' },
   { id: 'branch-002', name: '릴리맥여의도점' },
   { id: 'branch-003', name: '릴리맥NC이스트폴점' },
 ];

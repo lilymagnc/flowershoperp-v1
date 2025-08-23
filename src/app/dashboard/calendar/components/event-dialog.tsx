@@ -1,6 +1,7 @@
 "use client";
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,39 +14,40 @@ import { CalendarIcon, ExternalLink } from 'lucide-react';
 import { format } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
-
-interface CalendarEvent {
-  id: string;
-  type: 'delivery' | 'material' | 'employee' | 'notice';
-  title: string;
-  description?: string;
-  startDate: Date;
-  endDate?: Date;
-  branchName: string;
-  status: 'pending' | 'completed' | 'cancelled';
-  relatedId?: string;
-  color: string;
-  isAllDay?: boolean;
-}
+import { CalendarEvent } from '@/hooks/use-calendar';
 
 interface EventDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   event?: CalendarEvent | null;
-  branches: Array<{ id: string; name: string; type: string }>;
   onSave: (event: Omit<CalendarEvent, 'id'>) => void;
   onDelete?: (id: string) => void;
+  currentUser?: { role?: string; franchise?: string };
 }
 
 export function EventDialog({
   isOpen,
   onOpenChange,
   event,
-  branches,
   onSave,
-  onDelete
+  onDelete,
+  currentUser
 }: EventDialogProps) {
   const isEditing = !!event;
+  
+  // 권한 확인 로직 (단일 매장 시스템)
+  const canEdit = useMemo(() => {
+    return true; // 모든 사용자가 편집 가능
+  }, []);
+  
+  const canDelete = useMemo(() => {
+    if (!event) return false;
+    
+    // 자동 생성된 이벤트는 삭제 불가
+    if (event.relatedId) return false;
+    
+    return true; // 모든 사용자가 삭제 가능
+  }, [event]);
   
   // 폼 상태
   const [formData, setFormData] = useState({
@@ -54,26 +56,24 @@ export function EventDialog({
     description: '',
     startDate: new Date(),
     endDate: undefined as Date | undefined,
-    branchName: '',
     status: 'pending' as CalendarEvent['status'],
     isAllDay: false
   });
 
-  // 이벤트 타입별 설정
+  // 이벤트 타입별 설정 (자재요청 제거)
   const eventTypes = [
     { value: 'delivery', label: '배송/픽업', color: 'bg-blue-500' },
-    { value: 'material', label: '자재요청', color: 'bg-orange-500' },
     { value: 'employee', label: '직원스케줄', color: 'bg-green-500' },
-    { value: 'notice', label: '공지/알림', color: 'bg-red-500' }
+    { value: 'notice', label: '공지/알림', color: 'bg-red-500' },
+    { value: 'payment', label: '월결제일', color: 'bg-purple-500' }
   ];
 
-  // 이벤트 타입 변경 시 지점 자동 설정
+  // 이벤트 타입 변경
   const handleEventTypeChange = (value: string) => {
     const newType = value as CalendarEvent['type'];
     setFormData(prev => ({
       ...prev,
       type: newType,
-      branchName: newType === 'notice' ? '본사' : (branches[0]?.name || '')
     }));
   };
 
@@ -86,7 +86,6 @@ export function EventDialog({
         description: event.description || '',
         startDate: new Date(event.startDate),
         endDate: event.endDate ? new Date(event.endDate) : undefined,
-        branchName: event.branchName,
         status: event.status,
         isAllDay: event.isAllDay || false
       });
@@ -98,38 +97,59 @@ export function EventDialog({
         description: '',
         startDate: new Date(),
         endDate: undefined,
-        branchName: branches[0]?.name || '',
         status: 'pending',
         isAllDay: false
       });
     }
-  }, [event, branches]);
+  }, [event]);
 
   // 폼 제출 처리
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    const eventData: Omit<CalendarEvent, 'id'> = {
-      type: formData.type,
-      title: formData.title,
-      description: formData.description,
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-      branchName: formData.branchName,
-      status: formData.status,
-      color: eventTypes.find(t => t.value === formData.type)?.color || 'bg-gray-500',
-      isAllDay: formData.isAllDay
-    };
+    // 자동 생성된 이벤트는 수정할 수 없음
+    if (event?.relatedId) {
+      alert('자동 생성된 픽업/배송 예약은 수정할 수 없습니다. 주문 관리에서 수정해주세요.');
+      return;
+    }
+    
+    // 종료날짜가 설정되지 않은 경우 시작날짜와 동일하게 설정
+    const endDate = formData.endDate || formData.startDate;
+    
+         const eventData: Omit<CalendarEvent, 'id'> = {
+       type: formData.type,
+       title: formData.title,
+       description: formData.description,
+       startDate: formData.startDate,
+       endDate: endDate,
+       status: formData.status,
+       color: eventTypes.find(t => t.value === formData.type)?.color || 'bg-gray-500',
+       isAllDay: formData.isAllDay,
+       createdAt: new Date(),
+       updatedAt: new Date(),
+       createdBy: 'user'
+     };
 
     onSave(eventData);
     onOpenChange(false);
   };
 
   // 삭제 처리
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (event && onDelete) {
-      onDelete(event.id);
-      onOpenChange(false);
+      // 자동 생성된 이벤트는 삭제할 수 없음
+      if (event.relatedId) {
+        alert('자동 생성된 픽업/배송 예약은 삭제할 수 없습니다. 주문 관리에서 처리해주세요.');
+        return;
+      }
+      
+      try {
+        await onDelete(event.id);
+        // 삭제 후 다이얼로그 닫기
+        onOpenChange(false);
+      } catch (error) {
+        console.error('삭제 중 오류 발생:', error);
+      }
     }
   };
 
@@ -139,6 +159,8 @@ export function EventDialog({
       window.location.href = '/dashboard/pickup-delivery';
     }
   };
+
+
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -152,28 +174,30 @@ export function EventDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* 픽업/배송 예약 이벤트인 경우 이동 버튼 표시 */}
-        {event?.relatedId && event.type === 'delivery' && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-blue-800">픽업/배송 예약</p>
-                <p className="text-xs text-blue-600">이 일정은 주문 시스템에서 자동 생성되었습니다.</p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleGoToPickupDelivery}
-                className="text-blue-600 border-blue-300 hover:bg-blue-100"
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                픽업/배송관리로 이동
-              </Button>
-            </div>
-          </div>
-        )}
+                 {/* 픽업/배송 예약 이벤트인 경우 이동 버튼 표시 */}
+         {event?.relatedId && event.type === 'delivery' && (
+           <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+             <div className="flex items-center justify-between">
+               <div>
+                 <p className="text-sm font-medium text-blue-800">픽업/배송 예약</p>
+                 <p className="text-xs text-blue-600">이 일정은 주문 시스템에서 자동 생성되었습니다. 수정/삭제는 주문 관리에서 해주세요.</p>
+               </div>
+               <Button
+                 variant="outline"
+                 size="sm"
+                 onClick={handleGoToPickupDelivery}
+                 className="text-blue-600 border-blue-300 hover:bg-blue-100"
+               >
+                 <ExternalLink className="h-4 w-4 mr-2" />
+                 픽업/배송관리로 이동
+               </Button>
+             </div>
+           </div>
+         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+         
+
+        <form onSubmit={handleSubmit} className="space-y-4" id="event-form">
           {/* 이벤트 타입 */}
           <div className="space-y-2">
             <Label htmlFor="type">이벤트 유형</Label>
@@ -273,33 +297,41 @@ export function EventDialog({
                 />
               </PopoverContent>
             </Popover>
+                         {formData.type === 'employee' && (
+               <p className="text-xs text-blue-600">
+                 💡 직원스케줄의 경우 시작날짜부터 종료날짜까지 모든 날짜에 일정이 표시됩니다.
+               </p>
+             )}
+             {formData.type === 'notice' && (
+               <p className="text-xs text-blue-600">
+                 💡 공지/알림의 경우 시작날짜부터 종료날짜까지 모든 날짜에 일정이 표시됩니다.
+               </p>
+             )}
+             <p className="text-xs text-gray-500">
+               종료날짜를 설정하지 않으면 시작날짜와 동일한 날짜로 설정됩니다.
+             </p>
           </div>
 
-          {/* 지점 */}
-          <div className="space-y-2">
-            <Label htmlFor="branch">지점</Label>
-            <Select
-              value={formData.branchName}
-              onValueChange={(value) => setFormData(prev => ({ ...prev, branchName: value }))}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={formData.type === 'notice' ? "본사 (전체 공지)" : "지점을 선택하세요"} />
-              </SelectTrigger>
-              <SelectContent>
-                {formData.type === 'notice' && (
-                  <SelectItem value="본사">본사 (전체 공지)</SelectItem>
-                )}
-                {branches.map((branch) => (
-                  <SelectItem key={branch.id} value={branch.name}>
-                    {branch.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {formData.type === 'notice' && (
-              <p className="text-xs text-gray-500">공지/알림은 모든 지점에서 확인할 수 있습니다.</p>
-            )}
-          </div>
+                     {/* 시간 입력 (공지/알림인 경우) */}
+           {formData.type === 'notice' && (
+             <div className="space-y-2">
+               <Label htmlFor="time">시간</Label>
+               <Input
+                 id="time"
+                 type="time"
+                 value={formData.startDate.toTimeString().slice(0, 5)}
+                 onChange={(e) => {
+                   const [hours, minutes] = e.target.value.split(':').map(Number);
+                   const newDate = new Date(formData.startDate);
+                   newDate.setHours(hours, minutes, 0, 0);
+                   setFormData(prev => ({ ...prev, startDate: newDate }));
+                 }}
+               />
+               <p className="text-xs text-gray-500">
+                 공지/알림의 표시 시간을 설정하세요.
+               </p>
+             </div>
+           )}
 
           {/* 상태 */}
           <div className="space-y-2">
@@ -331,24 +363,61 @@ export function EventDialog({
             </Select>
           </div>
 
-          <DialogFooter>
-            {isEditing && onDelete && (
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={handleDelete}
-              >
-                삭제
-              </Button>
-            )}
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              취소
-            </Button>
-            <Button type="submit">
-              {isEditing ? '수정' : '추가'}
-            </Button>
-          </DialogFooter>
+                     <DialogFooter>
+             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+               취소
+             </Button>
+             <Button 
+               type="submit" 
+               disabled={isEditing && (!canEdit || !!event?.relatedId)}
+               title={
+                 isEditing && event?.relatedId 
+                   ? "자동 생성된 이벤트는 수정할 수 없습니다" 
+                   : isEditing && !canEdit
+                   ? "수정 권한이 없습니다"
+                   : ""
+               }
+             >
+               {isEditing ? '수정' : '추가'}
+             </Button>
+           </DialogFooter>
         </form>
+        
+                 {/* 삭제 버튼을 폼 밖으로 분리 */}
+         {isEditing && onDelete && canDelete && (
+           <div className="mt-4 pt-4 border-t">
+             <AlertDialog>
+               <AlertDialogTrigger asChild>
+                 <Button
+                   type="button"
+                   variant="destructive"
+                   className="w-full cursor-pointer"
+                 >
+                   삭제
+                 </Button>
+               </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>일정 삭제</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    정말로 이 일정을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>취소</AlertDialogCancel>
+                                     <AlertDialogAction
+                     onClick={async () => {
+                       await handleDelete();
+                     }}
+                     className="bg-destructive hover:bg-destructive/90"
+                   >
+                     삭제
+                   </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

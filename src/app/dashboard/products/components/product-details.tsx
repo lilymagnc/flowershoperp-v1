@@ -87,7 +87,7 @@ export function ProductDetails({ isOpen, onOpenChange, onEdit, product }: Produc
             <DialogClose asChild>
                 <Button type="button" variant="secondary">닫기</Button>
             </DialogClose>
-            {isHeadOfficeAdmin && <Button onClick={onEdit}>정보 수정</Button>}
+            <Button onClick={onEdit}>정보 수정</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

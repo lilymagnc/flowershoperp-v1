@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { useBranches } from "@/hooks/use-branches";
+
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, MinusCircle, PlusCircle, ScanLine, Store, Trash2, Wand2, Paperclip } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
@@ -21,7 +21,7 @@ interface ScannedItem {
   quantity: number;
 }
 export function StockMovement() {
-  const { branches } = useBranches();
+
   const { materials, loading: materialsLoading, updateStock } = useMaterials();
   const { user } = useAuth();
   const { toast } = useToast();
@@ -38,8 +38,8 @@ export function StockMovement() {
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
   const selectedBranchName = useMemo(() => {
-    return branches.find(b => b.id === selectedBranchId)?.name || "지점";
-  }, [selectedBranchId, branches]);
+    return "메인매장";
+  }, []);
   useEffect(() => {
     if (selectedBranchId && barcodeInputRef.current) {
       barcodeInputRef.current.focus();
@@ -238,7 +238,7 @@ export function StockMovement() {
                   <SelectValue placeholder="지점 선택..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {branches.filter(b => b.type !== '본사').map(branch => (
+                  {[{ name: '메인매장', id: 'main', type: 'branch' }].map(branch => (
                     <SelectItem key={branch.id} value={branch.id}>{branch.name}</SelectItem>
                   ))}
                 </SelectContent>

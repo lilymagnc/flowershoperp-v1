@@ -77,8 +77,7 @@ export function useInventorySync() {
           // 해당 지점의 자재 찾기
           const materialQuery = query(
             collection(db, 'materials'),
-            where('id', '==', item.actualMaterialId || item.originalMaterialId),
-            where('branch', '==', branchName)
+            where('id', '==', item.actualMaterialId || item.originalMaterialId)
           );
           const materialSnapshot = await getDocs(materialQuery);
           if (materialSnapshot.empty) {
@@ -164,13 +163,7 @@ export function useInventorySync() {
     branchName?: string
   ) => {
     try {
-      let materialsQuery = collection(db, 'materials');
-      if (branchId && branchName) {
-        materialsQuery = query(
-          collection(db, 'materials'),
-          where('branch', '==', branchName)
-        ) as any;
-      }
+      const materialsQuery = collection(db, 'materials');
       const materialsSnapshot = await getDocs(materialsQuery);
       const notifications: InventoryNotification[] = [];
       materialsSnapshot.forEach((doc) => {
@@ -282,8 +275,7 @@ export function useInventorySync() {
         // 자재 찾기
         const materialQuery = query(
           collection(db, 'materials'),
-          where('id', '==', materialId),
-          where('branch', '==', branchName)
+          where('id', '==', materialId)
         );
         const materialSnapshot = await getDocs(materialQuery);
         if (materialSnapshot.empty) {

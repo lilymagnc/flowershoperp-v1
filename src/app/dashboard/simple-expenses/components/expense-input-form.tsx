@@ -46,7 +46,7 @@ import { usePartners } from '@/hooks/use-partners';
 import { useAuth } from '@/hooks/use-auth';
 import { useMaterials } from '@/hooks/use-materials';
 import { useProducts } from '@/hooks/use-products';
-import { useBranches } from '@/hooks/use-branches';
+
 import { useUserRole } from '@/hooks/use-user-role';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
@@ -161,7 +161,7 @@ export function ExpenseInputForm({
   const { toast } = useToast();
   const { materials } = useMaterials();
   const { products } = useProducts();
-  const { branches, loading: branchesLoading } = useBranches();
+
   
   // 중복 데이터 체크 함수
   const checkDuplicateData = useCallback(async (processedData: any[]) => {
@@ -455,19 +455,11 @@ export function ExpenseInputForm({
               throw new Error(`행 ${index + 2}: 필수 데이터가 누락되었습니다.`);
             }
 
-            // 지점명 검증 - 지점 데이터가 로딩 중이면 검증 건너뛰기
+            // 지점명 검증 - 단일 매장 시스템
             const branchName = rowData['지점'].trim();
-            if (!branchesLoading && branches.length > 0) {
-              const isValidBranch = branches.some(branch => 
-                branch.name === branchName || 
-                branch.name.includes(branchName) || 
-                branchName.includes(branch.name)
-              );
-              
-              if (!isValidBranch) {
-                const errorMessage = `행 ${index + 2}: 등록되지 않은 지점명 "${branchName}"입니다. 등록된 지점: ${branches.map(b => b.name).join(', ')}`;
-                throw new Error(errorMessage);
-              }
+            if (branchName && branchName !== '메인매장') {
+              const errorMessage = `행 ${index + 2}: 등록되지 않은 지점명 "${branchName}"입니다. 등록된 지점: 메인매장`;
+              throw new Error(errorMessage);
             }
 
             // 날짜 처리 개선
@@ -561,7 +553,7 @@ export function ExpenseInputForm({
 
           if (branchName && branchName !== selectedBranchName) {
             // 엑셀에서 읽은 지점명이 현재 선택된 지점과 다르면 해당 지점의 ID를 찾기
-            const branch = branches.find(b => b.name === branchName);
+            const branch = { name: '메인매장', id: 'main' };
             if (branch) {
               branchId = branch.id;
               finalBranchName = branchName;

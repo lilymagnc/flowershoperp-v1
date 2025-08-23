@@ -12,23 +12,18 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { format } from "date-fns";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useBranches } from "@/hooks/use-branches";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import { useUserRole } from "@/hooks/use-user-role";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import Image from "next/image";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 export default function PhotoManagementPage() {
   const { orders, loading, updateOrder } = useOrders();
-  const { branches } = useBranches();
   const { user } = useAuth();
-  const { isAdmin, userBranch } = useUserRole();
   const { toast } = useToast();
   
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState("all");
   const [dateFilter, setDateFilter] = useState("all"); // all, today, week, month
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
 
@@ -38,13 +33,6 @@ export default function PhotoManagementPage() {
       order.deliveryInfo?.completionPhotoUrl && 
       order.status === 'completed'
     );
-
-    // 권한에 따른 지점 필터링
-    if (!isAdmin && userBranch) {
-      filteredOrders = filteredOrders.filter(order => order.branchName === userBranch);
-    } else if (selectedBranch !== 'all') {
-      filteredOrders = filteredOrders.filter(order => order.branchName === selectedBranch);
-    }
 
     // 검색어 필터링
     if (searchTerm) {
@@ -85,12 +73,11 @@ export default function PhotoManagementPage() {
       orderId: order.id,
       customerName: order.orderer.name,
       customerContact: order.orderer.contact,
-      branchName: order.branchName,
       photoUrl: order.deliveryInfo?.completionPhotoUrl!,
       completedAt: order.deliveryInfo?.completedAt,
       totalAmount: order.summary.total
     }));
-  }, [orders, selectedBranch, searchTerm, dateFilter, isAdmin, userBranch]);
+  }, [orders, searchTerm, dateFilter]);
 
   const handleDeletePhoto = async (orderId: string, photoUrl: string) => {
     try {
@@ -285,21 +272,7 @@ export default function PhotoManagementPage() {
                 />
               </div>
             </div>
-            {isAdmin && (
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="지점 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">전체 지점</SelectItem>
-                  {branches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.name}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+
             <Select value={dateFilter} onValueChange={setDateFilter}>
               <SelectTrigger className="w-32">
                 <SelectValue placeholder="기간" />
@@ -367,7 +340,7 @@ export default function PhotoManagementPage() {
                   <TableHead>주문번호</TableHead>
                   <TableHead>고객명</TableHead>
                   <TableHead>연락처</TableHead>
-                  <TableHead>지점</TableHead>
+
                   <TableHead>완료일시</TableHead>
                   <TableHead>주문금액</TableHead>
                   <TableHead className="text-center">작업</TableHead>
@@ -415,9 +388,7 @@ export default function PhotoManagementPage() {
                       <TableCell className="font-mono text-sm">{photo.orderId}</TableCell>
                       <TableCell>{photo.customerName}</TableCell>
                       <TableCell>{photo.customerContact}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{photo.branchName}</Badge>
-                      </TableCell>
+
                       <TableCell>
                         {photo.completedAt ? 
                           format(photo.completedAt.toDate ? photo.completedAt.toDate() : new Date(photo.completedAt), 'MM/dd HH:mm') 

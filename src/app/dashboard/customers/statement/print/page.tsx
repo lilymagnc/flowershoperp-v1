@@ -7,10 +7,10 @@ import { Printer, ArrowLeft, Download } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCustomers } from "@/hooks/use-customers";
 import { useOrders } from "@/hooks/use-orders";
-import { useBranches } from "@/hooks/use-branches";
+
 import { Customer } from "@/hooks/use-customers";
 import { Order } from "@/hooks/use-orders";
-import { Branch } from "@/hooks/use-branches";
+
 import { format } from "date-fns";
 import { ko } from "date-fns/locale";
 
@@ -35,13 +35,13 @@ export default function StatementPrintPage() {
   const searchParams = useSearchParams();
   const { customers, loading: customersLoading } = useCustomers();
   const { orders, loading: ordersLoading } = useOrders();
-  const { branches, loading: branchesLoading } = useBranches();
+
   const [statementData, setStatementData] = useState<StatementData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // 데이터가 아직 로딩 중이면 대기
-    if (customersLoading || ordersLoading || branchesLoading) {
+    if (customersLoading || ordersLoading) {
       return;
     }
 
@@ -63,7 +63,7 @@ export default function StatementPrintPage() {
     }
 
     // 고객의 담당지점 정보 찾기
-    const branch = branches.find(b => b.name === customer.branch);
+    const branch = { name: '메인매장', id: 'main' };
     const start = new Date(startDate);
     const end = new Date(endDate);
 
@@ -105,7 +105,7 @@ export default function StatementPrintPage() {
       summary
     });
     setLoading(false);
-  }, [searchParams, customers, orders, branches, router, customersLoading, ordersLoading, branchesLoading]);
+  }, [searchParams, customers, orders, router, customersLoading, ordersLoading]);
 
   const handlePrint = () => {
     window.print();
@@ -200,7 +200,7 @@ export default function StatementPrintPage() {
     }
   };
 
-  if (loading || customersLoading || ordersLoading || branchesLoading) {
+  if (loading || customersLoading || ordersLoading) {
     return <div className="flex justify-center items-center h-64">로딩 중...</div>;
   }
 
@@ -392,13 +392,11 @@ export default function StatementPrintPage() {
                   <div style={{ marginBottom: '4px' }}>
                     <strong>연락처:</strong> {statementData.customer.contact}
                   </div>
-                  <div style={{ marginBottom: '4px' }}>
-                    <strong>담당지점:</strong> {statementData.customer.branch}
-                  </div>
+
                 </td>
                 <td style={{ verticalAlign: 'top' }}>
                   <div style={{ marginBottom: '4px' }}>
-                    <strong>상호:</strong> {statementData.branch?.name || '릴리맥'}
+                    <strong>상호:</strong> {statementData.branch?.name || '플라워샵'} {/* TODO: useSettings에서 동적으로 가져오기 */}
                   </div>
                   <div style={{ marginBottom: '4px' }}>
                     <strong>사업자등록번호:</strong> {statementData.branch?.businessNumber || '123-45-67890'}

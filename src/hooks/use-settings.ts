@@ -3,6 +3,16 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
 export interface SystemSettings {
+  // 브랜드 정보
+  brandName: string;
+  brandLogo: string;
+  brandFavicon: string;
+  brandContactPhone: string;
+  brandAddress: string;
+  businessNumber: string;
+  businessOwner: string;
+  onlineShoppingMall: string;
+
   // 사이트 정보
   siteName: string;
   siteDescription: string;
@@ -60,10 +70,36 @@ export interface SystemSettings {
   // 배송완료 사진 관리 설정
   autoDeleteDeliveryPhotos: boolean;
   deliveryPhotoRetentionDays: number; // 보관 일수
+
+  // 이메일 사진 첨부 설정
+  emailPhotoAttachment: boolean;
+  attachOrderPhotos: boolean;
+  attachDeliveryPhotos: boolean;
+  attachBrandLogo: boolean;
+  maxPhotoSize: number; // MB 단위
+
+  // 메뉴 관리 설정
+  menuSettings: {
+    [key: string]: {
+      visible: boolean;
+      order: number;
+      label: string;
+    };
+  };
 }
 
 export const defaultSettings: SystemSettings = {
-  siteName: "릴리맥 ERP",
+  // 브랜드 정보
+          brandName: "플라워샵", // 시스템 설정에서 동적으로 변경 가능
+  brandLogo: "https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg",
+  brandFavicon: "/favicon.ico",
+  brandContactPhone: "02-1234-5678",
+  brandAddress: "서울특별시 종로구 광화문로 123",
+  businessNumber: "123-45-67890",
+  businessOwner: "홍길동",
+  onlineShoppingMall: "https://www.lilymag.com",
+
+          siteName: "플라워샵 ERP", // 시스템 설정에서 동적으로 변경 가능
   siteDescription: "플라워샵 주문관리 및 가맹점 관리를 위한 ERP 시스템",
   contactEmail: "admin@lilymag.com",
   contactPhone: "02-1234-5678",
@@ -178,7 +214,34 @@ export const defaultSettings: SystemSettings = {
 
   // 배송완료 사진 관리 설정
   autoDeleteDeliveryPhotos: false,
-  deliveryPhotoRetentionDays: 90 // 90일 보관
+  deliveryPhotoRetentionDays: 90, // 90일 보관
+
+  // 이메일 사진 첨부 설정
+  emailPhotoAttachment: true,
+  attachOrderPhotos: true,
+  attachDeliveryPhotos: true,
+  attachBrandLogo: true,
+  maxPhotoSize: 5, // MB 단위
+
+  // 메뉴 관리 설정
+  menuSettings: {
+    "dashboard": { visible: true, order: 1, label: "대시보드" },
+    "orders/new": { visible: true, order: 2, label: "주문접수" },
+    "orders": { visible: true, order: 3, label: "주문현황" },
+    "customers": { visible: true, order: 4, label: "고객관리" },
+    "products": { visible: true, order: 5, label: "상품관리" },
+    "materials": { visible: true, order: 6, label: "자재관리" },
+    "pickup-delivery": { visible: true, order: 7, label: "픽업/배송" },
+    "recipients": { visible: true, order: 8, label: "수령자관리" },
+    "simple-expenses": { visible: true, order: 9, label: "지출관리" },
+    "partners": { visible: true, order: 10, label: "거래처관리" },
+    "sample-albums": { visible: true, order: 11, label: "샘플앨범" },
+    "reports": { visible: true, order: 12, label: "리포트분석" },
+    "budgets": { visible: true, order: 13, label: "예산관리" },
+    "hr": { visible: true, order: 14, label: "인사관리" },
+    "stock-history": { visible: true, order: 15, label: "재고변동기록" },
+    "settings": { visible: true, order: 16, label: "설정" },
+  }
 };
 
 export function useSettings() {

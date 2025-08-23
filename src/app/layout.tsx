@@ -5,8 +5,11 @@ import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 export const metadata: Metadata = {
-    title: "Lilymag ERP",
-    description: "플라워샵 주문관리및 가맹점 관리를 위한 ERP 시스템",
+    title: "Flower Shop ERP",
+    description: "플라워샵 주문관리 및 매장 관리를 위한 ERP 시스템",
+    icons: {
+        icon: '/favicon.ico',
+    },
 };
 
 export default function RootLayout({

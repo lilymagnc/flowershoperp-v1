@@ -1,141 +1,69 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
-import { PageHeader } from "@/components/page-header";
-import { PlusCircle, Printer, Search, Download, FileUp, ScanLine } from "lucide-react";
-import { MaterialTable } from "./components/material-table";
-import { MaterialForm, MaterialFormValues } from "./components/material-form";
-import { useToast } from "@/hooks/use-toast";
-import { useRouter } from "next/navigation";
-import { MultiPrintOptionsDialog } from "@/components/multi-print-options-dialog";
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useBranches } from "@/hooks/use-branches";
+
 import { useMaterials } from "@/hooks/use-materials";
-import { Skeleton } from "@/components/ui/skeleton";
-import { downloadXLSX } from "@/lib/utils";
-import { useAuth } from "@/hooks/use-auth";
+import { Material } from "@/hooks/use-materials";
+import { PageHeader } from "@/components/page-header";
 import { ImportButton } from "@/components/import-button";
+import { MaterialForm } from "./components/material-form";
+import { MaterialTable } from "./components/material-table";
+import { MaterialStatsCards } from "./components/material-stats-cards";
+import { MultiPrintOptionsDialog } from "@/components/multi-print-options-dialog";
+import { ScanLine, Plus, Download } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { exportMaterialsToExcel } from "@/lib/excel-export";
 
 export default function MaterialsPage() {
+  const router = useRouter(); 
+  const { 
+    materials, 
+    loading, 
+    addMaterial, 
+    updateMaterial, 
+    deleteMaterial, 
+    bulkAddMaterials,
+    fetchMaterials,
+  } = useMaterials();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [selectedMaterial, setSelectedMaterial] = useState<any>(null);
+  const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
   const [selectedMaterials, setSelectedMaterials] = useState<string[]>([]);
   const [isMultiPrintDialogOpen, setIsMultiPrintDialogOpen] = useState(false);
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState("all");
-  const [selectedMainCategory, setSelectedMainCategory] = useState("all");
-  const [selectedMidCategory, setSelectedMidCategory] = useState("all");
-
-  const { toast } = useToast();
-  const router = useRouter();
-  const { user } = useAuth();
-  const { branches } = useBranches();
-  const { materials, loading: materialsLoading, addMaterial, updateMaterial, deleteMaterial, bulkAddMaterials, fetchMaterials, updateMaterialIds } = useMaterials();
-
-  const isHeadOfficeAdmin = user?.role === '본사 관리자';
-  const isAdmin = user?.role === '본사 관리자';
-  const userBranch = user?.franchise;
-
-  // 사용자가 볼 수 있는 지점 목록
-  const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 본사 관리자는 모든 지점을 볼 수 있음
-    } else {
-      return branches.filter(branch => branch.name === userBranch); // 지점 직원은 자신의 지점만
-    }
-  }, [branches, isAdmin, userBranch]);
-
-  // 자동 지점 필터링 (지점 직원은 자동으로 자신의 지점으로 설정)
-  useEffect(() => {
-    if (!isAdmin && userBranch && selectedBranch === "all") {
-      setSelectedBranch(userBranch);
-    }
-  }, [isAdmin, userBranch, selectedBranch]);
-
-  const mainCategories = useMemo(() => [...new Set(materials.map(m => m.mainCategory))], [materials]);
-  const midCategories = useMemo(() => {
-    if (selectedMainCategory === "all") {
-      return [...new Set(materials.map(m => m.midCategory))];
-    }
-    return [...new Set(materials.filter(m => m.mainCategory === selectedMainCategory).map(m => m.midCategory))];
-  }, [materials, selectedMainCategory]);
-
   const filteredMaterials = useMemo(() => {
-    let filtered = materials.filter(material => 
-      material && 
-      typeof material === 'object' && 
-      material.name && 
-      material.docId
-    );
-
-    // 검색어 필터링
-    if (searchTerm) {
-      filtered = filtered.filter(material => 
-        (material.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
-        (material.id?.toLowerCase() || '').includes(searchTerm.toLowerCase())
-      );
-    }
-
-    // 카테고리 필터링
-    if (selectedMainCategory !== "all") {
-      filtered = filtered.filter(material => material.mainCategory === selectedMainCategory);
-    }
-    if (selectedMidCategory !== "all") {
-      filtered = filtered.filter(material => material.midCategory === selectedMidCategory);
-    }
-
-    return filtered;
-  }, [materials, searchTerm, selectedBranch, selectedMainCategory, selectedMidCategory, isAdmin, userBranch, user]);
-
-  const handleAdd = () => {
-    setSelectedMaterial(null);
-    setIsFormOpen(true);
-  };
-
-  const handleEdit = (material: any) => {
-    setSelectedMaterial(material);
-    setIsFormOpen(true);
-  };
-
-  const handleFormSubmit = async (data: MaterialFormValues) => {
-    if (selectedMaterial?.docId) {
-      await updateMaterial(selectedMaterial.docId, selectedMaterial.id, data);
-    } else {
-      await addMaterial(data);
-    }
-    setIsFormOpen(false);
-    setSelectedMaterial(null);
-  };
-
-  const handleDelete = async (docId: string) => {
-    await deleteMaterial(docId);
-  };
-
-  const handleDownloadCurrentList = () => {
-    if (filteredMaterials.length === 0) {
-      toast({
-        variant: "destructive",
-        title: "내보낼 데이터 없음",
-        description: "현재 필터에 맞는 자재 데이터가 없습니다.",
-      });
-      return;
-    }
-    const dataToExport = filteredMaterials.map(({ id, name, mainCategory, midCategory, price, supplier, stock, size, color, branch }) => 
-      ({ id, name, mainCategory, midCategory, branch, supplier, price, size, color, stock })
-    );
-    downloadXLSX(dataToExport, "materials_list");
-    toast({
-      title: "목록 다운로드 성공",
-      description: `현재 필터링된 ${dataToExport.length}개 자재 정보가 XLSX 파일로 다운로드되었습니다.`,
+    return materials.filter(material => {
+      const matchesSearch = (material.name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+                          (material.id?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+      const matchesCategory = !selectedCategory || selectedCategory === "all" || material.mainCategory === selectedCategory;
+      return matchesSearch && matchesCategory;
     });
-  };
+  }, [materials, searchTerm, selectedCategory]);
 
-  const handleImport = async (data: any[]) => {
-    await bulkAddMaterials(data, selectedBranch);
+  // 카테고리 목록 생성 (필터링된 자재 기준)
+  const categories = useMemo(() => {
+    return [...new Set(filteredMaterials.map(material => material.mainCategory).filter(Boolean))];
+  }, [filteredMaterials]);
+
+  const handleFormSubmit = async (data: any) => {
+    try {
+      if (editingMaterial) {
+        await updateMaterial(editingMaterial.docId, editingMaterial.id, data);
+      } else {
+        await addMaterial(data);
+      }
+      setIsFormOpen(false);
+      setEditingMaterial(null);
+    } catch (error) {
+      console.error('Error saving material:', error);
+    }
   };
 
   const handleMultiPrintSubmit = (items: { id: string; quantity: number }[], startPosition: number) => {
@@ -149,16 +77,28 @@ export default function MaterialsPage() {
     setIsMultiPrintDialogOpen(false);
   };
 
-  const handleRefresh = async () => {
-    await fetchMaterials();
+  if (loading) {
+    return <div className="flex justify-center items-center h-64">로딩 중...</div>;
+  }
+
+  const handleEdit = (material: Material) => {
+    setEditingMaterial(material);
+    setIsFormOpen(true);
+  };
+
+  const handleExportToExcel = async () => {
+    try {
+      const filename = `자재목록_전체`;
+      await exportMaterialsToExcel(filteredMaterials, filename);
+    } catch (error) {
+      console.error('엑셀 내보내기 오류:', error);
+      alert('엑셀 파일 생성에 실패했습니다.');
+    }
   };
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="자재 관리"
-        description={!isAdmin ? `${userBranch} 지점의 자재 정보를 관리합니다.` : "자재 정보를 관리하고 재고를 추적하세요."}
-      >
+      <PageHeader title="자재 관리" description="자재를 추가, 수정, 삭제할 수 있습니다.">
         <div className="flex gap-2">
           <Button 
             variant="outline"
@@ -167,135 +107,71 @@ export default function MaterialsPage() {
             <ScanLine className="mr-2 h-4 w-4" />
             바코드 스캔
           </Button>
-          {isHeadOfficeAdmin && (
-            <>
-              <Button onClick={handleAdd}>
-                <PlusCircle className="mr-2 h-4 w-4" />
-                자재 추가
-              </Button>
-              <Button 
-                variant="outline"
-                onClick={updateMaterialIds}
-                disabled={materialsLoading}
-              >
-                ID 업데이트
-              </Button>
-            </>
+          <Button onClick={() => setIsFormOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            자재 추가
+          </Button>
+          <ImportButton
+            onImport={(data) => bulkAddMaterials(data)}
+            fileName="materials_template.xlsx"
+            resourceName="자재"
+          />
+          <Button 
+            variant="outline"
+            onClick={handleExportToExcel}
+            disabled={filteredMaterials.length === 0}
+          >
+            <Download className="mr-2 h-4 w-4" />
+            엑셀 내보내기
+          </Button>
+          {selectedMaterials.length > 0 && (
+            <Button 
+              variant="outline" 
+              onClick={() => setIsMultiPrintDialogOpen(true)}
+            >
+              선택 자재 라벨 출력 ({selectedMaterials.length}개)
+            </Button>
           )}
         </div>
       </PageHeader>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>자재 검색 및 필터</CardTitle>
-          <CardDescription>
-            자재명이나 ID로 검색하고 카테고리별로 필터링할 수 있습니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <Input
-                placeholder="자재명 또는 ID로 검색..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full"
-              />
-            </div>
-            {isAdmin && (
-              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
-                <SelectTrigger className="w-full sm:w-[200px] text-foreground">
-                  <SelectValue placeholder="지점 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">모든 지점</SelectItem>
-                  {availableBranches.map((branch) => (
-                    <SelectItem key={branch.id} value={branch.name}>
-                      {branch.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-            <Select value={selectedMainCategory} onValueChange={setSelectedMainCategory}>
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="대분류" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">모든 대분류</SelectItem>
-                {mainCategories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedMidCategory} onValueChange={setSelectedMidCategory}>
-              <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="중분류" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">모든 중분류</SelectItem>
-                {midCategories.map((category) => (
-                  <SelectItem key={category} value={category}>
-                    {category}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleDownloadCurrentList}
-              disabled={filteredMaterials.length === 0}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              현재 목록 다운로드
-            </Button>
-            {/* 바코드 라벨 출력 버튼 (모든 사용자) */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsMultiPrintDialogOpen(true)}
-              disabled={selectedMaterials.length === 0}
-            >
-              <Printer className="mr-2 h-4 w-4" />
-              선택 항목 라벨 출력
-            </Button>
-            
-            {/* 본사 관리자만 접근 가능한 기능들 */}
-            {isHeadOfficeAdmin && (
-              <ImportButton
-                onImport={handleImport}
-                templateData={[
-                  {
-                    id: "MAT001",
-                    name: "예시 자재",
-                    mainCategory: "대분류",
-                    midCategory: "중분류",
-                    price: 10000,
-                    supplier: "공급업체",
-                    size: "크기",
-                    color: "색상",
-                    stock: 100
-                  }
-                ]}
-                fileName="materials_template"
-              />
-            )}
-          </div>
-        </CardContent>
-      </Card>
+      {/* 자재 통계 카드 */}
+      <MaterialStatsCards 
+        materials={filteredMaterials} 
+        selectedBranch="all"
+        isAdmin={true}
+      />
 
-      {materialsLoading ? (
+      <div className="flex flex-col sm:flex-row gap-4">
+        <Input
+          placeholder="자재명 또는 코드로 검색..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="flex-1"
+        />
+        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="카테고리 선택" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">전체 카테고리</SelectItem>
+            {categories.map((category) => (
+              <SelectItem key={category} value={category}>
+                {category}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {filteredMaterials.length === 0 && !loading ? (
         <Card>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
+          <CardContent className="text-center py-8">
+            <p className="text-muted-foreground mb-4">표시할 자재가 없습니다.</p>
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p>총 자재 수: {materials.length}</p>
+              <p>검색어: {searchTerm || "없음"}</p>
+              <p>카테고리: {selectedCategory === "all" ? "전체" : selectedCategory}</p>
             </div>
           </CardContent>
         </Card>
@@ -304,8 +180,9 @@ export default function MaterialsPage() {
           materials={filteredMaterials}
           onSelectionChange={setSelectedMaterials}
           onEdit={handleEdit}
-          onDelete={handleDelete}
-          onRefresh={handleRefresh} // 새로고침 함수 전달
+          onDelete={deleteMaterial}
+          selectedMaterials={selectedMaterials}
+          isAdmin={true}
         />
       )}
 
@@ -313,9 +190,7 @@ export default function MaterialsPage() {
         isOpen={isFormOpen}
         onOpenChange={setIsFormOpen}
         onSubmit={handleFormSubmit}
-        material={selectedMaterial}
-        branches={availableBranches}
-        selectedBranch={!isAdmin ? userBranch : selectedBranch}
+        material={editingMaterial}
       />
 
       <MultiPrintOptionsDialog

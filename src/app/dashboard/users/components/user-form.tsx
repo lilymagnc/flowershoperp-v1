@@ -23,7 +23,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { useBranches } from "@/hooks/use-branches"
+
 import { useToast } from "@/hooks/use-toast"
 import { useState, useEffect } from "react"
 import { doc, setDoc, addDoc, collection, serverTimestamp, getDoc, query, where, getDocs, updateDoc } from "firebase/firestore"
@@ -62,7 +62,6 @@ interface UserFormProps {
   onUserUpdated?: () => void // 사용자 업데이트 후 콜백 추가
 }
 export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserFormProps) {
-  const { branches } = useBranches()
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
   const [employeeData, setEmployeeData] = useState<EmployeeData | null>(null)
@@ -82,6 +81,7 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
   // 수정 모드일 때 사용자 데이터와 직원 데이터를 가져와서 폼 초기화
   useEffect(() => {
     const fetchUserAndEmployeeData = async () => {
+      console.log("폼 초기화 시작:", { isEditMode, userEmail: user?.email })
       if (isEditMode && user?.email) {
         try {
           // 1) 사용자 기본 문서 조회로 최신 값 확보
@@ -90,10 +90,9 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
           // 2) userRoles에서 branchName/role 코드 보완
           const userRolesSnap = await getDocs(query(collection(db, "userRoles"), where("email", "==", user.email), where("isActive", "==", true)))
           const roleCodeToLabel: Record<string, string> = {
-            hq_manager: "본사 관리자",
-            branch_manager: "가맹점 관리자",
-            branch_user: "직원",
-            admin: "본사 관리자",
+            manager: "관리자",
+            user: "직원",
+            admin: "관리자",
           }
           let resolvedRole = user.role || ""
           let resolvedFranchise = user.franchise || ""
@@ -108,7 +107,7 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
               // role 코드 → 라벨 매핑
               const mapped = roleCodeToLabel[r.role as string]
               if (!resolvedRole && mapped) resolvedRole = mapped
-              if (!resolvedFranchise && r.branchName) resolvedFranchise = r.branchName
+              if (!resolvedFranchise) resolvedFranchise = "메인매장"
             }
           }
           // 사용자 데이터 설정 (권한/소속 보완값 반영)
@@ -132,14 +131,17 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
               id: employeeDoc.id // 문서 ID 추가
             })
             // 직원 데이터로 폼 업데이트
-            form.reset({
+            const formData = {
               ...userData,
               name: employee.name || "",
               position: employee.position || "",
               contact: employee.contact || "",
-            })
+            }
+            console.log("폼 데이터 설정 (직원 데이터 있음):", formData)
+            form.reset(formData)
           } else {
             // 직원 데이터가 없는 경우 사용자 데이터만 설정
+            console.log("직원 데이터가 없습니다. 사용자 데이터만 설정합니다:", userData)
             form.reset(userData)
           }
         } catch (error) {
@@ -228,27 +230,60 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
           setLoading(false);
           return;
         }
-        // 2. userRoles 컬렉션 업데이트 (단순하게)
+        // 2. 직원 데이터 업데이트 (employees 컬렉션)
+        const employeesQuery = query(collection(db, "employees"), where("email", "==", data.email));
+        const employeesSnapshot = await getDocs(employeesQuery);
+        
+        if (!employeesSnapshot.empty) {
+          // 기존 직원 데이터 업데이트
+          const employeeDoc = employeesSnapshot.docs[0];
+          await updateDoc(employeeDoc.ref, {
+            name: data.name,
+            position: data.position,
+            contact: data.contact,
+            updatedAt: serverTimestamp()
+          });
+        } else {
+          // 새 직원 데이터 생성
+          await addDoc(collection(db, "employees"), {
+            email: data.email,
+            name: data.name,
+            position: data.position,
+            contact: data.contact,
+            department: "일반",
+            hireDate: new Date(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        }
+
+        // 3. userRoles 컬렉션 업데이트 (단순하게)
         const roleMapping = {
-          "본사 관리자": "hq_manager",
-          "가맹점 관리자": "branch_manager", 
-          "직원": "branch_user"
+          "관리자": "manager",
+          "직원": "user"
         };
-        const mappedRole = roleMapping[finalRole as keyof typeof roleMapping] || "branch_user";
+        const mappedRole = roleMapping[finalRole as keyof typeof roleMapping] || "user";
         const userRolesQuery = query(collection(db, "userRoles"), where("email", "==", data.email));
         const userRolesSnapshot = await getDocs(userRolesQuery);
         if (!userRolesSnapshot.empty) {
           const userRoleDoc = userRolesSnapshot.docs[0];
           await updateDoc(userRoleDoc.ref, {
             role: mappedRole,
-            branchName: data.franchise,
             updatedAt: serverTimestamp()
           });
-          }
+        }
         toast({
           title: "성공",
           description: "사용자 정보가 성공적으로 수정되었습니다.",
         });
+        
+        // 현재 로그인한 사용자의 정보가 수정된 경우 auth context 새로고침
+        if (user?.email === data.email) {
+          // auth context를 새로고침하기 위해 페이지 새로고침
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000);
+        }
       } else {
         // 새 사용자 추가
         const userDocRef = doc(db, "users", data.email);
@@ -259,6 +294,19 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
           createdAt: serverTimestamp(),
           isActive: true
         });
+
+        // 직원 데이터도 함께 생성
+        await addDoc(collection(db, "employees"), {
+          email: data.email,
+          name: data.name,
+          position: data.position,
+          contact: data.contact,
+          department: "일반",
+          hireDate: new Date(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+
         toast({
           title: "성공",
           description: "새 사용자가 추가되었습니다.",
@@ -401,8 +449,7 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent id="user-role-content">
-                      <SelectItem value="본사 관리자" id="role-hq-manager" className="cursor-pointer">본사 관리자</SelectItem>
-                      <SelectItem value="가맹점 관리자" id="role-branch-manager" className="cursor-pointer">가맹점 관리자</SelectItem>
+                      <SelectItem value="관리자" id="role-manager" className="cursor-pointer">관리자</SelectItem>
                       <SelectItem value="직원" id="role-employee" className="cursor-pointer">직원</SelectItem>
                     </SelectContent>
                   </Select>
@@ -423,25 +470,7 @@ export function UserForm({ isOpen, onOpenChange, user, onUserUpdated }: UserForm
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent id="user-franchise-content">
-                      {/* 현재 값이 옵션 목록에 없더라도 표시되도록 임시 옵션 추가 */}
-                      {field.value &&
-                        field.value !== '' &&
-                        !['본사', ...branches.map(b => b.name)].includes(field.value) && (
-                          <SelectItem value={field.value} id={`franchise-current`} className="cursor-pointer">
-                            {field.value}
-                          </SelectItem>
-                        )}
-                      <SelectItem value="본사" id="franchise-hq" className="cursor-pointer">본사</SelectItem>
-                      {branches.map(branch => (
-                        <SelectItem 
-                          key={branch.id} 
-                          value={branch.name} 
-                          id={`franchise-${branch.id}`}
-                          className="cursor-pointer"
-                        >
-                          {branch.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="메인매장" id="franchise-main" className="cursor-pointer">메인매장</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />

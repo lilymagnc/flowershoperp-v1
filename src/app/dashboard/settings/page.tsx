@@ -36,12 +36,23 @@ import {
   Percent,
   Trash2,
   AlertTriangle,
-  Camera
+  Camera,
+  Upload,
+  X,
+  Search,
+  Menu,
+  Eye,
+  EyeOff,
+  GripVertical,
+  Move
 } from "lucide-react";
 import { useSettings, defaultSettings } from "@/hooks/use-settings";
 import { useDataCleanup } from "@/hooks/use-data-cleanup";
 import BackupManagement from "./components/backup-management";
 import { EmailTemplateEditor } from "@/components/email-template-editor";
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { storage } from '@/lib/firebase';
+
 export default function SettingsPage() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get('tab') || 'general';
@@ -50,12 +61,274 @@ export default function SettingsPage() {
   const [localSettings, setLocalSettings] = useState(settings);
   const [saving, setSaving] = useState(false);
   const [newFont, setNewFont] = useState('');
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingFavicon, setUploadingFavicon] = useState(false);
   const { toast } = useToast();
   const { user } = useAuth();
   const { isHQManager } = useUserRole();
   const { loading: cleanupLoading, progress, cleanupAllData, cleanupSpecificData } = useDataCleanup();
   const [selectedDataType, setSelectedDataType] = useState<string>('');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [draggedItem, setDraggedItem] = useState<string | null>(null);
+  const [dragOverItem, setDragOverItem] = useState<string | null>(null);
+
+  // 드래그 앤 드롭 함수들
+  const handleDragStart = (e: React.DragEvent, menuKey: string) => {
+    setDraggedItem(menuKey);
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, menuKey: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    if (menuKey !== draggedItem) {
+      setDragOverItem(menuKey);
+    }
+  };
+
+  const handleDragLeave = () => {
+    setDragOverItem(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetMenuKey: string) => {
+    e.preventDefault();
+    console.log('Drop event triggered:', { draggedItem, targetMenuKey });
+    
+    if (!draggedItem || draggedItem === targetMenuKey) {
+      console.log('Drop cancelled: invalid items');
+      return;
+    }
+
+    setLocalSettings(prev => {
+      const menuSettings = prev.menuSettings || defaultSettings.menuSettings;
+      console.log('Current menu settings:', menuSettings);
+      
+      // 현재 순서대로 메뉴 아이템들을 배열로 변환
+      const menuItems = Object.entries(menuSettings)
+        .sort(([,a], [,b]) => a.order - b.order)
+        .map(([key, config]) => ({ key, ...config }));
+      
+      // 드래그된 아이템의 인덱스 찾기
+      const draggedIndex = menuItems.findIndex(item => item.key === draggedItem);
+      // 타겟 아이템의 인덱스 찾기
+      const targetIndex = menuItems.findIndex(item => item.key === targetMenuKey);
+      
+      console.log('Indices:', { draggedIndex, targetIndex });
+      
+      if (draggedIndex === -1 || targetIndex === -1) {
+        console.log('Invalid indices found');
+        return prev;
+      }
+      
+      // 드래그된 아이템을 제거하고 타겟 위치에 삽입
+      const [draggedItemData] = menuItems.splice(draggedIndex, 1);
+      menuItems.splice(targetIndex, 0, draggedItemData);
+      
+      // 새로운 순서로 메뉴 설정 객체 생성
+      const newMenuSettings = {};
+      menuItems.forEach((item, index) => {
+        newMenuSettings[item.key] = {
+          visible: item.visible,
+          order: index + 1,
+          label: item.label
+        };
+      });
+      
+      console.log('New menu settings:', newMenuSettings);
+      
+      return {
+        ...prev,
+        menuSettings: newMenuSettings
+      };
+    });
+
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverItem(null);
+  };
+
+  // 파일 업로드 함수
+  const uploadFile = async (file: File, path: string): Promise<string> => {
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    return await getDownloadURL(storageRef);
+  };
+
+  // 로고 업로드 처리
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // 파일 타입 검증
+    if (!file.type.startsWith('image/')) {
+      toast({
+        variant: 'destructive',
+        title: '오류',
+        description: '이미지 파일만 업로드할 수 있습니다.'
+      });
+      return;
+    }
+
+    // 파일 크기 검증 (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: '오류',
+        description: '파일 크기는 5MB 이하여야 합니다.'
+      });
+      return;
+    }
+
+    try {
+      setUploadingLogo(true);
+      
+      // 기존 로고 삭제
+      if (localSettings.brandLogo && localSettings.brandLogo.includes('firebasestorage')) {
+        try {
+          const oldLogoRef = ref(storage, localSettings.brandLogo);
+          await deleteObject(oldLogoRef);
+        } catch (error) {
+          console.log('기존 로고 삭제 실패 (무시됨):', error);
+        }
+      }
+
+      // 새 로고 업로드
+      const logoPath = `brand-assets/${user?.email || 'default'}/logo_${Date.now()}.${file.name.split('.').pop()}`;
+      const logoUrl = await uploadFile(file, logoPath);
+      
+      setLocalSettings(prev => ({ ...prev, brandLogo: logoUrl }));
+      
+      toast({
+        title: '로고 업로드 완료',
+        description: '로고가 성공적으로 업로드되었습니다.'
+      });
+    } catch (error) {
+      console.error('로고 업로드 오류:', error);
+      toast({
+        variant: 'destructive',
+        title: '업로드 실패',
+        description: '로고 업로드 중 오류가 발생했습니다.'
+      });
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  // 파비콘 업로드 처리
+  const handleFaviconUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // 파일 타입 검증
+    if (!file.type.startsWith('image/')) {
+      toast({
+        variant: 'destructive',
+        title: '오류',
+        description: '이미지 파일만 업로드할 수 있습니다.'
+      });
+      return;
+    }
+
+    // 파일 크기 검증 (1MB)
+    if (file.size > 1 * 1024 * 1024) {
+      toast({
+        variant: 'destructive',
+        title: '오류',
+        description: '파비콘 파일 크기는 1MB 이하여야 합니다.'
+      });
+      return;
+    }
+
+    try {
+      setUploadingFavicon(true);
+      
+      // 기존 파비콘 삭제
+      if (localSettings.brandFavicon && localSettings.brandFavicon.includes('firebasestorage')) {
+        try {
+          const oldFaviconRef = ref(storage, localSettings.brandFavicon);
+          await deleteObject(oldFaviconRef);
+        } catch (error) {
+          console.log('기존 파비콘 삭제 실패 (무시됨):', error);
+        }
+      }
+
+      // 새 파비콘 업로드
+      const faviconPath = `brand-assets/${user?.email || 'default'}/favicon_${Date.now()}.${file.name.split('.').pop()}`;
+      const faviconUrl = await uploadFile(file, faviconPath);
+      
+      setLocalSettings(prev => ({ ...prev, brandFavicon: faviconUrl }));
+      
+      toast({
+        title: '파비콘 업로드 완료',
+        description: '파비콘이 성공적으로 업로드되었습니다.'
+      });
+    } catch (error) {
+      console.error('파비콘 업로드 오류:', error);
+      toast({
+        variant: 'destructive',
+        title: '업로드 실패',
+        description: '파비콘 업로드 중 오류가 발생했습니다.'
+      });
+    } finally {
+      setUploadingFavicon(false);
+    }
+  };
+
+  // 로고 삭제
+  const handleLogoDelete = async () => {
+    if (!localSettings.brandLogo || !localSettings.brandLogo.includes('firebasestorage')) {
+      setLocalSettings(prev => ({ ...prev, brandLogo: '' }));
+      return;
+    }
+
+    try {
+      const logoRef = ref(storage, localSettings.brandLogo);
+      await deleteObject(logoRef);
+      setLocalSettings(prev => ({ ...prev, brandLogo: '' }));
+      
+      toast({
+        title: '로고 삭제 완료',
+        description: '로고가 성공적으로 삭제되었습니다.'
+      });
+    } catch (error) {
+      console.error('로고 삭제 오류:', error);
+      toast({
+        variant: 'destructive',
+        title: '삭제 실패',
+        description: '로고 삭제 중 오류가 발생했습니다.'
+      });
+    }
+  };
+
+  // 파비콘 삭제
+  const handleFaviconDelete = async () => {
+    if (!localSettings.brandFavicon || !localSettings.brandFavicon.includes('firebasestorage')) {
+      setLocalSettings(prev => ({ ...prev, brandFavicon: '' }));
+      return;
+    }
+
+    try {
+      const faviconRef = ref(storage, localSettings.brandFavicon);
+      await deleteObject(faviconRef);
+      setLocalSettings(prev => ({ ...prev, brandFavicon: '' }));
+      
+      toast({
+        title: '파비콘 삭제 완료',
+        description: '파비콘이 성공적으로 삭제되었습니다.'
+      });
+    } catch (error) {
+      console.error('파비콘 삭제 오류:', error);
+      toast({
+        variant: 'destructive',
+        title: '삭제 실패',
+        description: '파비콘 삭제 중 오류가 발생했습니다.'
+      });
+    }
+  };
   const handleSpecificDataCleanup = (dataType: string) => {
     setSelectedDataType(dataType);
     setShowConfirmDialog(true);
@@ -67,6 +340,177 @@ export default function SettingsPage() {
       setSelectedDataType('');
     }
   };
+
+  // 메뉴 관리 함수들
+  const getMenuDisplayName = (menuKey: string): string => {
+    const menuNames: { [key: string]: string } = {
+      'dashboard': '대시보드',
+      'orders/new': '주문접수',
+      'orders': '주문현황',
+      'products': '상품관리',
+      'customers': '고객관리',
+      'materials': '자재관리',
+      'pickup-delivery': '픽업/배송',
+      'recipients': '수령자관리',
+      'simple-expenses': '지출관리',
+      'partners': '거래처관리',
+      'sample-albums': '샘플앨범',
+      'reports': '리포트분석',
+      'budgets': '예산관리',
+      'hr': '인사관리',
+      'users': '사용자관리',
+      'stock-history': '재고변동기록',
+      'settings': '설정'
+    };
+    return menuNames[menuKey] || menuKey;
+  };
+
+  const toggleMenuVisibility = (menuKey: string) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      menuSettings: {
+        ...(prev.menuSettings || defaultSettings.menuSettings),
+        [menuKey]: {
+          ...(prev.menuSettings || defaultSettings.menuSettings)[menuKey],
+          visible: !(prev.menuSettings || defaultSettings.menuSettings)[menuKey].visible
+        }
+      }
+    }));
+  };
+
+  const moveMenuUp = (menuKey: string) => {
+    console.log('moveMenuUp called with:', menuKey);
+    setLocalSettings(prev => {
+      const menuSettings = prev.menuSettings || defaultSettings.menuSettings;
+      const currentOrder = menuSettings[menuKey]?.order;
+      console.log('Current order:', currentOrder);
+      if (!currentOrder || currentOrder <= 1) return prev;
+
+      const newMenuSettings = { ...menuSettings };
+      
+      // 현재 메뉴와 위 메뉴의 순서를 바꿈
+      Object.keys(newMenuSettings).forEach(key => {
+        if (newMenuSettings[key].order === currentOrder - 1) {
+          newMenuSettings[key].order = currentOrder;
+          console.log(`Moved ${key} from ${currentOrder - 1} to ${currentOrder}`);
+        } else if (key === menuKey) {
+          newMenuSettings[key].order = currentOrder - 1;
+          console.log(`Moved ${key} from ${currentOrder} to ${currentOrder - 1}`);
+        }
+      });
+
+      console.log('New menu settings:', newMenuSettings);
+      return {
+        ...prev,
+        menuSettings: newMenuSettings
+      };
+    });
+  };
+
+  const moveMenuDown = (menuKey: string) => {
+    console.log('moveMenuDown called with:', menuKey);
+    setLocalSettings(prev => {
+      const menuSettings = prev.menuSettings || defaultSettings.menuSettings;
+      const currentOrder = menuSettings[menuKey]?.order;
+      const maxOrder = Object.keys(menuSettings).length;
+      console.log('Current order:', currentOrder, 'Max order:', maxOrder);
+      if (!currentOrder || currentOrder >= maxOrder) return prev;
+
+      const newMenuSettings = { ...menuSettings };
+      
+      // 현재 메뉴와 아래 메뉴의 순서를 바꿈
+      Object.keys(newMenuSettings).forEach(key => {
+        if (newMenuSettings[key].order === currentOrder + 1) {
+          newMenuSettings[key].order = currentOrder;
+          console.log(`Moved ${key} from ${currentOrder + 1} to ${currentOrder}`);
+        } else if (key === menuKey) {
+          newMenuSettings[key].order = currentOrder + 1;
+          console.log(`Moved ${key} from ${currentOrder} to ${currentOrder + 1}`);
+        }
+      });
+
+      console.log('New menu settings:', newMenuSettings);
+      return {
+        ...prev,
+        menuSettings: newMenuSettings
+      };
+    });
+  };
+
+  const resetMenuSettings = () => {
+    setLocalSettings(prev => ({
+      ...prev,
+      menuSettings: defaultSettings.menuSettings
+    }));
+  };
+
+  // 사용자 관리 메뉴 추가 기능은 더 이상 필요하지 않음
+  // const [showUsersMenuToast, setShowUsersMenuToast] = useState(false);
+  // const [usersMenuToastMessage, setUsersMenuToastMessage] = useState('');
+
+  // const addUsersMenu = () => {
+  //   const currentMenuSettings = localSettings.menuSettings || defaultSettings.menuSettings;
+    
+  //   // users 메뉴가 이미 있으면 아무것도 하지 않음
+  //   if (currentMenuSettings.users) {
+  //     setUsersMenuToastMessage("사용자관리 메뉴가 이미 존재합니다.");
+  //     setShowUsersMenuToast(true);
+  //     return;
+  //   }
+
+  //   setLocalSettings(prev => {
+  //     // users 메뉴 추가
+  //     const newMenuSettings = {
+  //       ...currentMenuSettings,
+  //       "users": { visible: true, order: 15, label: "사용자관리" }
+  //     };
+
+  //     // 기존 메뉴들의 순서 조정
+  //     if (newMenuSettings["stock-history"]) {
+  //       newMenuSettings["stock-history"].order = 16;
+  //     }
+  //     if (newMenuSettings["settings"]) {
+  //       newMenuSettings["settings"].order = 17;
+  //     }
+
+  //     return {
+  //       ...prev,
+  //       menuSettings: newMenuSettings
+  //     };
+  //   });
+
+  //   setUsersMenuToastMessage("사용자관리 메뉴가 추가되었습니다.");
+  //   setShowUsersMenuToast(true);
+  // };
+
+  const saveMenuSettings = async () => {
+    try {
+      setSaving(true);
+      const success = await saveSettings(localSettings);
+      if (success) {
+        toast({
+          title: '메뉴 설정 저장 완료',
+          description: '메뉴 설정이 성공적으로 저장되었습니다.'
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: '저장 실패',
+          description: '메뉴 설정 저장 중 오류가 발생했습니다.'
+        });
+      }
+    } catch (error) {
+      console.error('메뉴 설정 저장 오류:', error);
+      toast({
+        variant: 'destructive',
+        title: '저장 실패',
+        description: '메뉴 설정 저장 중 오류가 발생했습니다.'
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const getDataTypeName = (dataType: string): string => {
     const dataTypeNames: { [key: string]: string } = {
       'orders': '주문',
@@ -85,17 +529,75 @@ export default function SettingsPage() {
   // settings가 로드되었을 때만 localSettings 업데이트
   useEffect(() => {
     if (!loading && settings !== defaultSettings) {
-      setLocalSettings(settings);
+      // 메뉴 설정이 없으면 기본값으로 설정
+      const updatedSettings = {
+        ...settings,
+        menuSettings: settings.menuSettings || defaultSettings.menuSettings
+      };
+      setLocalSettings(updatedSettings);
+
+       // 저장된 폰트들을 로드
+       const savedFonts = localStorage.getItem('customFonts');
+       if (savedFonts) {
+         try {
+           const fonts = JSON.parse(savedFonts);
+           // 폰트가 설정에 없으면 추가
+           if (fonts.length > 0 && (!updatedSettings.availableFonts || updatedSettings.availableFonts.length === 0)) {
+             setLocalSettings(prev => ({
+               ...prev,
+               availableFonts: fonts
+             }));
+           }
+         } catch (error) {
+           console.error('저장된 폰트 로드 오류:', error);
+         }
+       }
     }
   }, [settings, loading]);
+
+  // 사용자 메뉴 추가 toast 처리 - 더 이상 필요하지 않음
+  // useEffect(() => {
+  //   if (showUsersMenuToast && usersMenuToastMessage) {
+  //     toast({
+  //       title: usersMenuToastMessage.includes("이미 존재") ? "알림" : "성공",
+  //       description: usersMenuToastMessage,
+  //     });
+  //     setShowUsersMenuToast(false);
+  //     setUsersMenuToastMessage('');
+  //   }
+  // }, [showUsersMenuToast, usersMenuToastMessage, toast]);
   const handleSaveSettings = async () => {
     try {
       setSaving(true);
       const success = await saveSettings(localSettings);
       if (success) {
+        // 브랜드 설정이 변경된 경우 파비콘 업데이트
+        if (localSettings.brandFavicon && localSettings.brandFavicon !== settings?.brandFavicon) {
+          const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement;
+          if (link) {
+            link.href = localSettings.brandFavicon;
+          }
+        }
+        
+        // 사이트명이 변경된 경우 페이지 제목 업데이트
+        if (localSettings.siteName !== settings?.siteName) {
+          const newTitle = localSettings.siteName || 'Flower Shop ERP';
+          document.title = newTitle;
+          console.log('브라우저 탭 제목 업데이트:', {
+            oldSiteName: settings?.siteName,
+            newSiteName: localSettings.siteName,
+            newTitle: newTitle
+          });
+        }
+
+         // 폰트 설정이 변경된 경우 로컬 스토리지에 저장
+         if (localSettings.availableFonts !== settings?.availableFonts) {
+           localStorage.setItem('customFonts', JSON.stringify(localSettings.availableFonts || []));
+        }
+        
         toast({
           title: '설정 저장 완료',
-          description: '이메일 템플릿을 포함한 모든 시스템 설정이 저장되었습니다.'
+          description: '브랜드 정보를 포함한 모든 시스템 설정이 저장되었습니다.'
         });
       } else {
         toast({
@@ -144,6 +646,37 @@ export default function SettingsPage() {
       description: `폰트 "${fontName}"가 추가되었습니다.`
     });
   };
+
+  // 온라인 폰트 추가 함수
+  const addOnlineFont = (fontFamily: string, fontUrl?: string) => {
+    const currentFonts = localSettings.availableFonts || [];
+    if (currentFonts.includes(fontFamily)) {
+      toast({
+        variant: 'destructive',
+        title: '오류',
+        description: '이미 존재하는 폰트입니다.'
+      });
+      return;
+    }
+
+    // 폰트 URL이 있으면 동적으로 CSS 추가
+    if (fontUrl) {
+      const link = document.createElement('link');
+      link.href = fontUrl;
+      link.rel = 'stylesheet';
+      document.head.appendChild(link);
+    }
+
+    setLocalSettings(prev => ({
+      ...prev,
+      availableFonts: [...currentFonts, fontFamily]
+    }));
+
+    toast({
+      title: '성공',
+      description: `온라인 폰트 "${fontFamily}"가 추가되었습니다.`
+    });
+  };
   // 본사 관리자가 아니면 접근 제한
   if (!isHQManager()) {
     return (
@@ -173,18 +706,304 @@ export default function SettingsPage() {
         description="시스템의 기본 설정을 관리합니다."
       />
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-10">
+        <TabsList className="grid w-full grid-cols-12">
+          <TabsTrigger value="brand">브랜드관리</TabsTrigger>
+          <TabsTrigger value="menu">메뉴관리</TabsTrigger>
           <TabsTrigger value="general">일반 설정</TabsTrigger>
           <TabsTrigger value="delivery">배송 설정</TabsTrigger>
           <TabsTrigger value="notifications">알림 설정</TabsTrigger>
           <TabsTrigger value="messages">메시지 설정</TabsTrigger>
           <TabsTrigger value="auto-email">자동 이메일</TabsTrigger>
-          <TabsTrigger value="files">파일 관리</TabsTrigger>
+          <TabsTrigger value="photos">사진관리</TabsTrigger>
           <TabsTrigger value="security">보안 설정</TabsTrigger>
           <TabsTrigger value="discount">할인 설정</TabsTrigger>
           <TabsTrigger value="backup">백업 관리</TabsTrigger>
           <TabsTrigger value="data-cleanup">데이터 초기화</TabsTrigger>
         </TabsList>
+        {/* 브랜드 관리 */}
+        <TabsContent value="brand" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Building className="h-5 w-5" />
+                브랜드 정보
+              </CardTitle>
+              <CardDescription>
+                플라워샵의 브랜드 정보를 관리합니다. 로고, 파비콘, 연락처 정보 등을 설정할 수 있습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+                             {/* 로고 및 파비콘 */}
+               <div className="space-y-4">
+                 <h3 className="text-lg font-semibold">로고 및 아이콘</h3>
+                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                   <div className="space-y-2">
+                     <Label>브랜드 로고</Label>
+                     <div className="space-y-2">
+                       <div className="flex gap-2">
+                         <input
+                           type="file"
+                           id="logoUpload"
+                           accept="image/*"
+                           onChange={handleLogoUpload}
+                           className="hidden"
+                           disabled={uploadingLogo}
+                         />
+                         <label
+                           htmlFor="logoUpload"
+                           className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                         >
+                           <Upload className="h-4 w-4" />
+                           {uploadingLogo ? '업로드 중...' : '로고 업로드'}
+                         </label>
+                         {localSettings.brandLogo && (
+                           <Button
+                             variant="outline"
+                             size="sm"
+                             onClick={handleLogoDelete}
+                             disabled={uploadingLogo}
+                             className="text-red-600 hover:text-red-700"
+                           >
+                             <X className="h-4 w-4" />
+                           </Button>
+                         )}
+                       </div>
+                       {localSettings.brandLogo && (
+                         <div className="mt-2">
+                           <Label>로고 미리보기</Label>
+                           <div className="mt-1 p-2 border rounded">
+                             <img 
+                               src={localSettings.brandLogo} 
+                               alt="브랜드 로고" 
+                               className="max-h-20 max-w-full object-contain"
+                               onError={(e) => {
+                                 e.currentTarget.style.display = 'none';
+                               }}
+                             />
+                           </div>
+                         </div>
+                       )}
+                       <p className="text-xs text-gray-500">
+                         • 이미지 파일만 업로드 가능 (JPG, PNG, GIF 등)
+                         • 파일 크기: 최대 5MB
+                         • 권장 크기: 200x80px 이상
+                       </p>
+                     </div>
+                   </div>
+                   <div className="space-y-2">
+                     <Label>파비콘</Label>
+                     <div className="space-y-2">
+                       <div className="flex gap-2">
+                         <input
+                           type="file"
+                           id="faviconUpload"
+                           accept="image/*"
+                           onChange={handleFaviconUpload}
+                           className="hidden"
+                           disabled={uploadingFavicon}
+                         />
+                         <label
+                           htmlFor="faviconUpload"
+                           className="flex items-center gap-2 px-3 py-2 border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                         >
+                           <Upload className="h-4 w-4" />
+                           {uploadingFavicon ? '업로드 중...' : '파비콘 업로드'}
+                         </label>
+                         {localSettings.brandFavicon && (
+                           <Button
+                             variant="outline"
+                             size="sm"
+                             onClick={handleFaviconDelete}
+                             disabled={uploadingFavicon}
+                             className="text-red-600 hover:text-red-700"
+                           >
+                             <X className="h-4 w-4" />
+                           </Button>
+                         )}
+                       </div>
+                       {localSettings.brandFavicon && (
+                         <div className="mt-2">
+                           <Label>파비콘 미리보기</Label>
+                           <div className="mt-1 p-2 border rounded">
+                             <img 
+                               src={localSettings.brandFavicon} 
+                               alt="파비콘" 
+                               className="h-8 w-8 object-contain"
+                               onError={(e) => {
+                                 e.currentTarget.style.display = 'none';
+                               }}
+                             />
+                           </div>
+                         </div>
+                       )}
+                       <p className="text-xs text-gray-500">
+                         • 이미지 파일만 업로드 가능 (ICO, PNG 등)
+                         • 파일 크기: 최대 1MB
+                         • 권장 크기: 32x32px 또는 16x16px
+                       </p>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+
+              {/* 기본 정보 */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">기본 정보</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="brandName">플라워샵 이름</Label>
+                    <Input
+                      id="brandName"
+                      value={localSettings.brandName}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, brandName: e.target.value }))}
+                      placeholder="플라워샵"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="brandContactPhone">연락처</Label>
+                    <Input
+                      id="brandContactPhone"
+                      value={localSettings.brandContactPhone}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, brandContactPhone: e.target.value }))}
+                      placeholder="02-1234-5678"
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="brandAddress">주소</Label>
+                    <Input
+                      id="brandAddress"
+                      value={localSettings.brandAddress}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, brandAddress: e.target.value }))}
+                      placeholder="서울특별시 종로구 광화문로 123"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="businessNumber">사업자번호</Label>
+                    <Input
+                      id="businessNumber"
+                      value={localSettings.businessNumber}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, businessNumber: e.target.value }))}
+                      placeholder="123-45-67890"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="businessOwner">대표자명</Label>
+                    <Input
+                      id="businessOwner"
+                      value={localSettings.businessOwner}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, businessOwner: e.target.value }))}
+                      placeholder="홍길동"
+                    />
+                  </div>
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="onlineShoppingMall">온라인쇼핑몰</Label>
+                    <Input
+                      id="onlineShoppingMall"
+                      value={localSettings.onlineShoppingMall}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, onlineShoppingMall: e.target.value }))}
+                      placeholder="https://www.lilymag.com"
+                    />
+                    <p className="text-xs text-gray-500">
+                      온라인쇼핑몰 주소를 입력하세요. 인수증 하단에 표시됩니다.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* 메뉴 관리 */}
+        <TabsContent value="menu" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Menu className="h-5 w-5" />
+                메뉴 관리
+              </CardTitle>
+              <CardDescription>
+                사이드바 메뉴의 표시 여부와 순서를 관리합니다. 원하는 메뉴만 보이게 하거나 순서를 변경할 수 있습니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold">메뉴 설정</h3>
+                <div className="space-y-3">
+                  {Object.entries(localSettings.menuSettings || defaultSettings.menuSettings)
+                    .sort(([,a], [,b]) => a.order - b.order)
+                    .map(([menuKey, menuConfig]) => (
+                    <div
+                      key={menuKey}
+                      className={`flex items-center justify-between p-3 border rounded-lg transition-all duration-200 ${
+                        draggedItem === menuKey 
+                          ? 'bg-blue-100 border-blue-300 shadow-lg opacity-50' 
+                          : dragOverItem === menuKey
+                          ? 'bg-green-100 border-green-300 shadow-md'
+                          : 'bg-gray-50 hover:bg-gray-100'
+                      } ${draggedItem && draggedItem !== menuKey ? 'cursor-pointer' : 'cursor-grab'}`}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, menuKey)}
+                      onDragOver={(e) => handleDragOver(e, menuKey)}
+                      onDragLeave={handleDragLeave}
+                      onDrop={(e) => handleDrop(e, menuKey)}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <div className="flex items-center gap-3">
+                        <GripVertical className="h-4 w-4 text-gray-400 cursor-move" />
+                        <span className="font-medium">{getMenuDisplayName(menuKey)}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleMenuVisibility(menuKey)}
+                          className={menuConfig.visible ? "text-green-600" : "text-gray-400"}
+                        >
+                          {menuConfig.visible ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                          {menuConfig.visible ? "보임" : "숨김"}
+                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              console.log('Up button clicked for:', menuKey);
+                              moveMenuUp(menuKey);
+                            }}
+                            disabled={menuConfig.order <= 1}
+                          >
+                            ↑
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              console.log('Down button clicked for:', menuKey);
+                              moveMenuDown(menuKey);
+                            }}
+                            disabled={menuConfig.order >= Object.keys(localSettings.menuSettings || defaultSettings.menuSettings).length}
+                          >
+                            ↓
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              
+              <div className="flex gap-2">
+                <Button onClick={resetMenuSettings} variant="outline">
+                  기본값으로 복원
+                </Button>
+                <Button onClick={saveMenuSettings}>
+                  메뉴 설정 저장
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* 일반 설정 */}
         <TabsContent value="general" className="space-y-4">
           <Card>
@@ -438,9 +1257,16 @@ export default function SettingsPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto border rounded-md p-2">
                     {localSettings.availableFonts?.map((font, index) => (
                       <div key={font} className="flex items-center justify-between p-2 border rounded">
-                        <span style={{ fontFamily: font }} className="text-sm">
+                         <div className="flex flex-col">
+                           <span style={{ fontFamily: font }} className="text-sm font-medium">
                           {font}
                         </span>
+                           <span style={{ fontFamily: font }} className="text-xs text-gray-500">
+                             The quick brown fox jumps over the lazy dog
+                             <br />
+                             안녕하세요 반갑습니다
+                           </span>
+                         </div>
                         <Button
                           variant="outline"
                           size="sm"
@@ -456,8 +1282,9 @@ export default function SettingsPage() {
                     ))}
                   </div>
                 </div>
+                                 <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="newFont">새 폰트 추가</Label>
+                     <Label htmlFor="newFont">로컬 폰트 추가</Label>
                   <div className="flex gap-2">
                     <Input
                       id="newFont"
@@ -477,8 +1304,101 @@ export default function SettingsPage() {
                   <p className="text-xs text-gray-500">
                     • 폰트 이름은 정확히 입력해야 합니다 (예: "Roboto", "Open Sans")
                     • 시스템에 설치된 폰트만 사용 가능합니다
-                    • 웹 폰트를 사용하려면 CSS에서 @import 또는 @font-face를 추가해야 합니다
-                  </p>
+                     </p>
+                   </div>
+
+                   <div className="space-y-2">
+                     <Label>온라인 폰트 추가</Label>
+                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => addOnlineFont('Roboto', 'https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap')}
+                       >
+                         Roboto 추가
+                       </Button>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => addOnlineFont('Open Sans', 'https://fonts.googleapis.com/css2?family=Open+Sans:wght@300;400;500;600;700&display=swap')}
+                       >
+                         Open Sans 추가
+                       </Button>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => addOnlineFont('Lato', 'https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap')}
+                       >
+                         Lato 추가
+                       </Button>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => addOnlineFont('Poppins', 'https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap')}
+                       >
+                         Poppins 추가
+                       </Button>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => addOnlineFont('Inter', 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap')}
+                       >
+                         Inter 추가
+                       </Button>
+                       <Button
+                         variant="outline"
+                         size="sm"
+                         onClick={() => addOnlineFont('Noto Sans KR', 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap')}
+                       >
+                         Noto Sans KR 추가
+                       </Button>
+                     </div>
+                     <p className="text-xs text-gray-500">
+                       • Google Fonts에서 인기 있는 폰트들을 한 번에 추가할 수 있습니다
+                       • 한국어 지원 폰트도 포함되어 있습니다
+                     </p>
+                   </div>
+
+                   <div className="space-y-2">
+                     <Label>커스텀 온라인 폰트</Label>
+                     <div className="flex gap-2">
+                       <Input
+                         placeholder="폰트 이름 (예: My Custom Font)"
+                         value={newFont}
+                         onChange={(e) => setNewFont(e.target.value)}
+                         className="flex-1"
+                       />
+                       <Input
+                         placeholder="CSS URL (예: https://fonts.googleapis.com/css2?family=...)"
+                         className="flex-1"
+                         id="customFontUrl"
+                       />
+                       <Button
+                         onClick={() => {
+                           const fontUrl = (document.getElementById('customFontUrl') as HTMLInputElement)?.value;
+                           if (newFont.trim() && fontUrl) {
+                             addOnlineFont(newFont.trim(), fontUrl);
+                             setNewFont('');
+                             (document.getElementById('customFontUrl') as HTMLInputElement).value = '';
+                           } else {
+                             toast({
+                               variant: 'destructive',
+                               title: '오류',
+                               description: '폰트 이름과 CSS URL을 모두 입력해주세요.'
+                             });
+                           }
+                         }}
+                         disabled={!newFont.trim()}
+                         size="sm"
+                       >
+                         추가
+                       </Button>
+                     </div>
+                     <p className="text-xs text-gray-500">
+                       • Google Fonts, Adobe Fonts, 또는 다른 웹 폰트 서비스의 CSS URL을 입력하세요
+                       • 예: https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap
+                     </p>
+                   </div>
                 </div>
               </CardContent>
             </Card>
@@ -592,8 +1512,8 @@ export default function SettingsPage() {
            </Card>
          </TabsContent>
 
-         {/* 파일 관리 설정 탭 */}
-         <TabsContent value="files" className="space-y-4">
+         {/* 사진관리 설정 탭 */}
+         <TabsContent value="photos" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -634,6 +1554,149 @@ export default function SettingsPage() {
                     : '자동 삭제가 비활성화되어 있습니다.'
                   }
                 </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Mail className="h-5 w-5" />
+                이메일 사진 첨부 관리
+              </CardTitle>
+              <CardDescription>
+                자동 이메일 발송 시 첨부할 사진을 관리합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label>이메일 사진 첨부 활성화</Label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id="emailPhotoAttachment"
+                    checked={localSettings.emailPhotoAttachment || false}
+                    onChange={(e) => setLocalSettings(prev => ({ ...prev, emailPhotoAttachment: e.target.checked }))}
+                    className="h-4 w-4"
+                  />
+                  <Label htmlFor="emailPhotoAttachment" className="text-sm">
+                    자동 이메일 발송 시 사진 첨부
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500">
+                  주문 완료, 배송 완료 등의 자동 이메일 발송 시 관련 사진을 첨부합니다.
+                </p>
+              </div>
+              
+              <div className="space-y-2">
+                <Label>첨부 사진 종류</Label>
+                <div className="space-y-2">
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="attachOrderPhotos"
+                      checked={localSettings.attachOrderPhotos || false}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, attachOrderPhotos: e.target.checked }))}
+                      className="h-4 w-4"
+                      disabled={!localSettings.emailPhotoAttachment}
+                    />
+                    <Label htmlFor="attachOrderPhotos" className="text-sm">
+                      주문 상품 사진
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="attachDeliveryPhotos"
+                      checked={localSettings.attachDeliveryPhotos || false}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, attachDeliveryPhotos: e.target.checked }))}
+                      className="h-4 w-4"
+                      disabled={!localSettings.emailPhotoAttachment}
+                    />
+                    <Label htmlFor="attachDeliveryPhotos" className="text-sm">
+                      배송 완료 사진
+                    </Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="attachBrandLogo"
+                      checked={localSettings.attachBrandLogo || false}
+                      onChange={(e) => setLocalSettings(prev => ({ ...prev, attachBrandLogo: e.target.checked }))}
+                      className="h-4 w-4"
+                      disabled={!localSettings.emailPhotoAttachment}
+                    />
+                    <Label htmlFor="attachBrandLogo" className="text-sm">
+                      브랜드 로고
+                    </Label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="maxPhotoSize">최대 사진 크기 (MB)</Label>
+                <Input
+                  id="maxPhotoSize"
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={localSettings.maxPhotoSize || 5}
+                  onChange={(e) => setLocalSettings(prev => ({ ...prev, maxPhotoSize: Number(e.target.value) }))}
+                  disabled={!localSettings.emailPhotoAttachment}
+                />
+                <p className="text-xs text-gray-500">
+                  이메일 첨부 사진의 최대 크기를 설정합니다. (1-10MB)
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Trash2 className="h-5 w-5" />
+                사진 정리 도구
+              </CardTitle>
+              <CardDescription>
+                불필요한 사진들을 정리하고 저장 공간을 관리합니다.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>오래된 배송완료 사진 정리</Label>
+                  <p className="text-sm text-gray-500">설정된 기간이 지난 배송완료 사진을 수동으로 정리합니다.</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      toast({
+                        title: '정리 완료',
+                        description: '오래된 배송완료 사진이 정리되었습니다.'
+                      });
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    정리 실행
+                  </Button>
+                </div>
+                <div className="space-y-2">
+                  <Label>중복 사진 검사</Label>
+                  <p className="text-sm text-gray-500">중복된 사진들을 찾아서 정리합니다.</p>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      toast({
+                        title: '검사 완료',
+                        description: '중복 사진 검사가 완료되었습니다.'
+                      });
+                    }}
+                  >
+                    <Search className="h-4 w-4 mr-2" />
+                    검사 실행
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

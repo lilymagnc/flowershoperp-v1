@@ -31,7 +31,7 @@ import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Employee } from "@/hooks/use-employees";
-import { useBranches } from "@/hooks/use-branches";
+
 import { useEffect } from "react";
 import { POSITION_OPTIONS } from "@/lib/constants";
 const employeeSchema = z.object({
@@ -62,7 +62,7 @@ const defaultValues: EmployeeFormValues = {
   address: "",
 }
 export function EmployeeForm({ isOpen, onOpenChange, onSubmit, employee }: EmployeeFormProps) {
-  const { branches } = useBranches();
+
   const form = useForm<EmployeeFormValues>({
     resolver: zodResolver(employeeSchema),
     defaultValues,
@@ -165,7 +165,7 @@ export function EmployeeForm({ isOpen, onOpenChange, onSubmit, employee }: Emplo
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>
-                      {branches.map(branch => (
+                      {[{ name: '메인매장', id: 'main' }].map(branch => (
                         <SelectItem key={branch.id} value={branch.name}>{branch.name}</SelectItem>
                       ))}
                     </SelectContent>

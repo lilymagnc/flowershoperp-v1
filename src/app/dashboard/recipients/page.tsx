@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { PageHeader } from "@/components/page-header";
 import { useRecipients } from "@/hooks/use-recipients";
-import { useBranches } from "@/hooks/use-branches";
+
 import { useAuth } from "@/hooks/use-auth";
 import { Search, MapPin, Phone, Calendar, TrendingUp, Edit, Trash2, MoreHorizontal } from "lucide-react";
 import { format } from "date-fns";
@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 export default function RecipientsPage() {
   const { recipients, loading, fetchRecipients, getRecipientsByDistrict, getFrequentRecipients, updateRecipient, deleteRecipient } = useRecipients();
-  const { branches } = useBranches();
+
   const { user } = useAuth();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedBranch, setSelectedBranch] = useState<string>("all");
@@ -41,12 +41,8 @@ export default function RecipientsPage() {
   const userBranch = user?.franchise;
   // 사용자가 볼 수 있는 지점 목록
   const availableBranches = useMemo(() => {
-    if (isAdmin) {
-      return branches; // 관리자는 모든 지점
-    } else {
-      return branches.filter(branch => branch.name === userBranch); // 직원은 소속 지점만
-    }
-  }, [branches, isAdmin, userBranch]);
+    return [{ name: '메인매장', id: 'main' }];
+  }, []);
   // 직원의 경우 자동으로 소속 지점으로 필터링
   useEffect(() => {
     if (!isAdmin && userBranch && selectedBranch === "all") {

@@ -1,7 +1,10 @@
 
 "use client";
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Image from 'next/image';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+
 export interface OrderPrintData {
     orderDate: string;
     ordererName: string;
@@ -24,9 +27,11 @@ export interface OrderPrintData {
         account: string;
     };
 }
+
 interface PrintableOrderProps {
     data: OrderPrintData | null;
 }
+
 const paymentMethodMap = {
     card: "카드",
     cash: "현금",
@@ -35,24 +40,63 @@ const paymentMethodMap = {
     shopping_mall: "쇼핑몰",
     epay: "이페이"
 };
+
 // Use a class component to ensure compatibility with react-to-print's ref handling.
 export class PrintableOrder extends React.Component<PrintableOrderProps> {
+    state = {
+        brandLogo: 'https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg',
+        brandName: '플라워샵', // TODO: useSettings에서 동적으로 가져오기
+        brandContactPhone: '010-2385-9518',
+        brandAddress: '서울특별시 종로구 광화문로 123',
+        businessNumber: '123-45-67890',
+        onlineShoppingMall: 'www.lilymagshop.co.kr'
+    };
+
+    componentDidMount() {
+        this.loadBrandSettings();
+    }
+
+    loadBrandSettings = async () => {
+        try {
+            const settingsDoc = await getDoc(doc(db, 'system', 'settings'));
+            if (settingsDoc.exists()) {
+                const settings = settingsDoc.data();
+                
+                this.setState({
+                    brandLogo: settings.brandLogo || this.state.brandLogo,
+                    brandName: settings.brandName || this.state.brandName,
+                    brandContactPhone: settings.brandContactPhone || this.state.brandContactPhone,
+                    brandAddress: settings.brandAddress || this.state.brandAddress,
+                    businessNumber: settings.businessNumber || this.state.businessNumber,
+                    onlineShoppingMall: settings.onlineShoppingMall || this.state.onlineShoppingMall
+                });
+            }
+        } catch (error) {
+            // 브랜드 설정 로드 실패 시 기본값 사용
+        }
+    };
+
     render() {
         const { data } = this.props;
+        const { brandLogo, brandName, brandContactPhone, brandAddress, businessNumber, onlineShoppingMall } = this.state;
+        
         if (!data) return null;
+        
         const Checkbox = ({ checked }: { checked: boolean }) => (
             <span style={{ display: 'inline-block', width: '14px', height: '14px', border: '1px solid black', marginRight: '4px', position: 'relative', verticalAlign: 'middle' }}>
                 {checked && <span style={{ position: 'absolute', top: '-3px', left: '2px', fontSize: '14px' }}>✔</span>}
             </span>
         );
+        
         const paymentMethodText = paymentMethodMap[data.paymentMethod as keyof typeof paymentMethodMap] || data.paymentMethod;
+        
         const renderSection = (title: string, isReceipt: boolean) => (
             <div className="mb-4">
                 <div className="text-center mb-4">
                     { !isReceipt && (
                         <>
                         <Image
-                            src="https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg"
+                            src={brandLogo}
                             alt="Logo"
                             width={150}
                             height={60}
@@ -60,14 +104,15 @@ export class PrintableOrder extends React.Component<PrintableOrderProps> {
                             style={{ width: '150px', height: 'auto' }}
                             priority
                             unoptimized
+                            sizes="150px"
                         />
-                        <h1 className="text-2xl font-bold mt-2">릴리맥 플라워앤가든 {title}</h1>
+                        <h1 className="text-2xl font-bold mt-2">{brandName} {title}</h1>
                         </>
                     )}
                     { isReceipt && (
                         <>
                             <Image
-                                src="https://ecimg.cafe24img.com/pg1472b45444056090/lilymagflower/web/upload/category/logo/v2_d13ecd48bab61a0269fab4ecbe56ce07_lZMUZ1lORo_top.jpg"
+                                src={brandLogo}
                                 alt="Logo"
                                 width={100}
                                 height={40}
@@ -75,6 +120,7 @@ export class PrintableOrder extends React.Component<PrintableOrderProps> {
                                 style={{ width: '100px', height: 'auto' }}
                                 priority
                                 unoptimized
+                                sizes="100px"
                             />
                             <h1 className="text-2xl font-bold mt-2">{title}</h1>
                         </>
@@ -151,20 +197,20 @@ export class PrintableOrder extends React.Component<PrintableOrderProps> {
                     <table className="w-full border-collapse border-black text-xs">
                          <tbody>
                             <tr>
-                                <td className="border border-black p-1 font-bold w-[20%]">릴리맥여의도점</td>
-                                <td className="border border-black p-1 w-[30%]">010-8241-9518</td>
-                                <td className="border border-black p-1 font-bold w-[20%]">릴리맥여의도2호점</td>
-                                <td className="border border-black p-1 w-[30%]">010-7939-9518</td>
+                                <td className="border border-black p-1 font-bold w-[12%]">상호명</td>
+                                <td className="border border-black p-1 w-[38%]">{brandName}</td>
+                                <td className="border border-black p-1 font-bold w-[12%]">연락처</td>
+                                <td className="border border-black p-1 w-[38%]">{brandContactPhone}</td>
                             </tr>
                             <tr>
-                                <td className="border border-black p-1 font-bold">릴리맥NC이스트폴점</td>
-                                <td className="border border-black p-1">010-2908-5459</td>
-                                <td className="border border-black p-1 font-bold">릴리맥광화문점</td>
-                                <td className="border border-black p-1">010-2385-9518</td>
+                                <td className="border border-black p-1 font-bold">주소</td>
+                                <td className="border border-black p-1" colSpan={3}>{brandAddress}</td>
                             </tr>
                             <tr>
-                                 <td className="border border-black p-1 font-bold">[온라인쇼핑몰]</td>
-                                 <td className="border border-black p-1" colSpan={3}>www.lilymagshop.co.kr</td>
+                                <td className="border border-black p-1 font-bold">사업자번호</td>
+                                <td className="border border-black p-1">{businessNumber}</td>
+                                <td className="border border-black p-1 font-bold">온라인쇼핑몰</td>
+                                <td className="border border-black p-1">{onlineShoppingMall}</td>
                             </tr>
                         </tbody>
                     </table>

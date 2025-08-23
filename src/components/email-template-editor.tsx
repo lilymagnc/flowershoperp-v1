@@ -234,7 +234,7 @@ export function EmailTemplateEditor({ templateName, value, onChange, variables, 
       '주문번호': 'ORD-20241201-001',
       '주문일': '2024년 12월 1일',
       '총금액': '125,000',
-      '회사명': '릴리맥 플라워샵',
+              '회사명': '플라워샵', // TODO: useSettings에서 동적으로 가져오기
       '연락처': '02-1234-5678',
       '이메일': 'info@lilymag.com',
       '배송일': '2024년 12월 3일',

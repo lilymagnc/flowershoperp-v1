@@ -15,7 +15,6 @@ import { Barcode } from "@/components/barcode";
 import { PrintOptionsDialog } from "@/components/print-options-dialog";
 import { useRouter } from "next/navigation";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useAuth } from "@/hooks/use-auth";
 
 export type Product = {
   docId: string;
@@ -38,22 +37,15 @@ interface ProductTableProps {
   onEdit: (product: Product) => void;
   onDelete: (docId: string) => void;
   selectedProducts?: string[];
-  isAdmin?: boolean;
-  onRefresh?: () => void; // 새로 추가
 }
 
-export function ProductTable({ products, onSelectionChange, onEdit, onDelete, selectedProducts, isAdmin, onRefresh }: ProductTableProps) {
+export function ProductTable({ products, onSelectionChange, onEdit, onDelete, selectedProducts, onRefresh }: ProductTableProps) {
   const router = useRouter();
-  const { user } = useAuth();
   const [isStockFormOpen, setIsStockFormOpen] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
   const [selectedRows, setSelectedRows] = useState<Record<string, boolean>>({});
-  
-
-
-  const isHeadOfficeAdmin = user?.role === '본사 관리자';
 
   const handleSelectionChange = (id: string) => {
     const newSelection = { ...selectedRows, [id]: !selectedRows[id] };
@@ -117,8 +109,7 @@ export function ProductTable({ products, onSelectionChange, onEdit, onDelete, se
   };
 
   const getStatus = (status: string, stock: number) => {
-    if (status === 'out_of_stock' || stock === 0) return { text: '품절', variant: 'destructive' as const };
-    if (status === 'low_stock' || stock < 10) return { text: '재고 부족', variant: 'secondary' as const };
+    if (status === 'low_stock' || stock < 5) return { text: '재고 부족', variant: 'secondary' as const };
     return { text: '판매중', variant: 'default' as const };
   }
 
@@ -142,7 +133,7 @@ export function ProductTable({ products, onSelectionChange, onEdit, onDelete, se
                 <TableHead>상태</TableHead>
                 <TableHead className="hidden md:table-cell">카테고리</TableHead>
                 <TableHead className="hidden sm:table-cell">가격</TableHead>
-                <TableHead className="hidden md:table-cell">소속 지점</TableHead>
+
                 <TableHead className="text-right">재고</TableHead>
                 <TableHead>
                   <span className="sr-only">작업</span>
@@ -185,7 +176,6 @@ export function ProductTable({ products, onSelectionChange, onEdit, onDelete, se
                   </TableCell>
                   <TableCell className="hidden md:table-cell cursor-pointer" onClick={() => handleRowClick(product)}>{product.mainCategory} &gt; {product.midCategory}</TableCell>
                   <TableCell className="hidden sm:table-cell cursor-pointer" onClick={() => handleRowClick(product)}>₩{(product.price || 0).toLocaleString()}</TableCell>
-                  <TableCell className="hidden md:table-cell cursor-pointer" onClick={() => handleRowClick(product)}>{product.branch}</TableCell>
                   <TableCell className="text-right cursor-pointer" onClick={() => handleRowClick(product)}>{product.stock}</TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <AlertDialog>
@@ -198,17 +188,13 @@ export function ProductTable({ products, onSelectionChange, onEdit, onDelete, se
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuLabel>작업</DropdownMenuLabel>
-                          {isHeadOfficeAdmin && <DropdownMenuItem onSelect={() => handleEdit(product)}>수정</DropdownMenuItem>}
+                          <DropdownMenuItem onSelect={() => handleEdit(product)}>수정</DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => handleStockUpdate(product)}>재고 업데이트</DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => handlePrint(product)}>라벨 인쇄</DropdownMenuItem>
-                          {isHeadOfficeAdmin && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <AlertDialogTrigger asChild>
-                                <DropdownMenuItem className="text-destructive" onSelect={(e) => e.preventDefault()}>삭제</DropdownMenuItem>
-                              </AlertDialogTrigger>
-                            </>
-                          )}
+                          <DropdownMenuSeparator />
+                          <AlertDialogTrigger asChild>
+                            <DropdownMenuItem className="text-destructive" onSelect={(e) => e.preventDefault()}>삭제</DropdownMenuItem>
+                          </AlertDialogTrigger>
                         </DropdownMenuContent>
                       </DropdownMenu>
                       <AlertDialogContent>
@@ -260,7 +246,7 @@ export function ProductTable({ products, onSelectionChange, onEdit, onDelete, se
         isOpen={isDetailOpen}
         onOpenChange={setIsDetailOpen}
         product={selectedProduct}
-        onEdit={() => selectedProduct && isHeadOfficeAdmin && handleEdit(selectedProduct)}
+        onEdit={() => selectedProduct && handleEdit(selectedProduct)}
       />
     </>
   );

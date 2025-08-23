@@ -18,7 +18,6 @@ interface ScannedItem {
   type: 'product' | 'material';
   currentStock: number;
   originalStock: number;
-  branch: string;
   price: number;
   supplier: string;
   docId?: string;
@@ -32,13 +31,9 @@ export default function BarcodeScannerPage() {
   const [barcodeInput, setBarcodeInput] = useState("");
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedBranch, setSelectedBranch] = useState(user?.franchise || "all");
   const [scanMode, setScanMode] = useState<'manual' | 'camera'>('manual');
   const [operationMode, setOperationMode] = useState<'in' | 'out'>('in'); // 입고/출고 모드
   const [isScanning, setIsScanning] = useState(false);
-  // 현재 사용자의 지점 정보
-  const currentUserBranch = user?.franchise;
-  const isHQManager = user?.role === '본사 관리자';
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -114,11 +109,8 @@ export default function BarcodeScannerPage() {
   const searchByBarcode = (barcode: string) => {
     const trimmedBarcode = barcode.trim();
     if (!trimmedBarcode) return;
-    // 상품에서 검색 (지점별 필터링)
-    const filteredProducts = isHQManager 
-      ? products 
-      : products.filter(p => p.branch === currentUserBranch);
-    const product = filteredProducts.find(p => p.id === trimmedBarcode);
+    // 상품에서 검색
+    const product = products.find(p => p.id === trimmedBarcode);
     if (product) {
       const existingItem = scannedItems.find(item => item.id === product.id && item.type === 'product');
       if (existingItem) {
@@ -145,7 +137,7 @@ export default function BarcodeScannerPage() {
           type: 'product',
           currentStock: product.stock,
           originalStock: product.stock,
-          branch: product.branch,
+
           price: product.price,
           supplier: product.supplier,
           docId: product.docId,
@@ -163,11 +155,8 @@ export default function BarcodeScannerPage() {
       }
       return;
     }
-    // 자재에서 검색 (지점별 필터링)
-    const filteredMaterials = isHQManager 
-      ? materials 
-      : materials.filter(m => m.branch === currentUserBranch);
-    const material = filteredMaterials.find(m => m.id === trimmedBarcode);
+    // 자재에서 검색
+    const material = materials.find(m => m.id === trimmedBarcode);
     if (material) {
       const existingItem = scannedItems.find(item => item.id === material.id && item.type === 'material');
       if (existingItem) {
@@ -194,7 +183,7 @@ export default function BarcodeScannerPage() {
           type: 'material',
           currentStock: material.stock,
           originalStock: material.stock,
-          branch: material.branch,
+
           price: material.price,
           supplier: material.supplier,
           docId: material.docId,
@@ -259,10 +248,10 @@ export default function BarcodeScannerPage() {
             ? item.originalStock + item.quantity 
             : Math.max(0, item.originalStock - item.quantity);
           if (item.type === 'product') {
-            await updateProductStock(item.id, item.name, newStock, item.branch, user?.email || "Unknown User");
+            await updateProductStock(item.id, item.name, newStock, user?.email || "Unknown User");
             successCount++;
           } else if (item.type === 'material') {
-            await updateMaterialStock(item.id, item.name, newStock, item.branch, user?.email || "Unknown User");
+            await updateMaterialStock(item.id, item.name, newStock, user?.email || "Unknown User");
             successCount++;
           }
         } catch (error) {
@@ -313,33 +302,10 @@ export default function BarcodeScannerPage() {
     <div className="space-y-6">
       <PageHeader 
         title="바코드 스캐너" 
-        description={`바코드를 스캔하여 ${operationMode === 'in' ? '입고' : '출고'}를 관리합니다. ${!isHQManager ? `(현재 지점: ${currentUserBranch})` : '(전체 지점)'}`}
+        description={`바코드를 스캔하여 ${operationMode === 'in' ? '입고' : '출고'}를 관리합니다.`}
       />
-      {/* 지점 정보 및 입고/출고 모드 선택 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 지점 정보 */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Badge variant={isHQManager ? "default" : "secondary"}>
-                {isHQManager ? "본사 관리자" : "지점 사용자"}
-              </Badge>
-              지점 정보
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">현재 지점:</span>
-                <span className="font-medium">{currentUserBranch || '지점 없음'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-sm text-gray-600">검색 범위:</span>
-                <span className="font-medium">{isHQManager ? '전체 지점' : '현재 지점만'}</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* 입고/출고 모드 선택 */}
+      <div className="grid grid-cols-1 lg:grid-cols-1 gap-6">
         {/* 입고/출고 모드 선택 */}
         <Card>
           <CardHeader>
@@ -420,7 +386,7 @@ export default function BarcodeScannerPage() {
                        <p>• 또는 바코드를 직접 입력하고 Enter를 누르세요</p>
                        <p>• 같은 바코드를 다시 스캔하면 {operationMode === 'in' ? '입고' : '출고'} 수량이 증가합니다</p>
                        <p>• 상품과 자재 모두 검색 가능합니다</p>
-                       <p>• {isHQManager ? '전체 지점의 상품/자재를 검색합니다' : `현재 지점(${currentUserBranch})의 상품/자재만 검색합니다`}</p>
+                       <p>• 모든 상품/자재를 검색합니다</p>
                      </div>
                    </AlertDescription>
                  </Alert>
@@ -513,7 +479,7 @@ export default function BarcodeScannerPage() {
                               )}
                             </div>
                             <div className="text-sm text-gray-600 mt-1">
-                              바코드: {item.id} | 지점: {item.branch}
+                              바코드: {item.id}
                             </div>
                             <div className="text-sm text-gray-600">
                               현재 재고: {item.originalStock}개
