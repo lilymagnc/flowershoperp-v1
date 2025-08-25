@@ -26,11 +26,20 @@ export const DashboardBillboard = () => {
       try {
         setWeatherLoading(true);
         const response = await fetch('/api/weather');
-        if (!response.ok) throw new Error('Failed to fetch weather');
         const data = await response.json();
-        setWeather(data);
+        
+        // Handle both successful responses and fallback responses
+        if (response.ok) {
+          setWeather(data);
+        } else {
+          console.warn('Weather API error:', data.error || 'Unknown error');
+          // Set weather to null values to hide weather display
+          setWeather({ lowTemp: null, highTemp: null, condition: null });
+        }
       } catch (error) {
-        console.error(error);
+        console.error('Error fetching weather:', error);
+        // Set weather to null values to hide weather display
+        setWeather({ lowTemp: null, highTemp: null, condition: null });
       } finally {
         setWeatherLoading(false);
       }
