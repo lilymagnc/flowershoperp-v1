@@ -53,19 +53,14 @@ const initializeFirebase = () => {
         ignoreUndefinedProperties: true, // undefined 속성 무시
         experimentalAutoDetectLongPolling: false, // 자동 감지 비활성화
       });
-      console.log('Firestore initialized with custom settings');
+      // Firestore initialized with custom settings
       
       // BloomFilter 오류 방지를 위한 추가 설정
-      console.log('Firestore settings applied:', {
-        experimentalForceLongPolling: true,
-        cacheSizeBytes: '50MB',
-        ignoreUndefinedProperties: true,
-        experimentalAutoDetectLongPolling: false
-      });
+      // Firestore settings applied
     } catch (error) {
       console.warn('Firestore initialization failed, falling back to default:', error);
       db = getFirestore(app);
-      console.log('Firestore initialized with default settings');
+      // Firestore initialized with default settings
     }
 
     // 개발 환경에서 에뮬레이터 연결 (선택사항)
@@ -97,11 +92,11 @@ if (typeof window !== 'undefined') {
         // BloomFilter 오류 방지를 위한 추가 설정
     if (db) {
       // Firestore 연결 상태 모니터링
-      console.log('Firestore connection established successfully');
+      // Firestore connection established successfully
       
       // 네트워크 연결 상태 확인
       if (typeof navigator !== 'undefined' && navigator.onLine) {
-        console.log('Network connection is online');
+        // Network connection is online
       } else {
         console.warn('Network connection is offline');
       }
@@ -182,7 +177,7 @@ export const checkFirestoreConnection = async () => {
   try {
     // 간단한 테스트 쿼리로 연결 상태 확인
     const testQuery = collection(db, 'test');
-    console.log('Firestore connection test successful');
+    // Firestore connection test successful
     return true;
   } catch (error) {
     console.error('Firestore connection test failed:', error);
@@ -202,7 +197,7 @@ export const initializeFirestoreWithRetry = async (maxRetries = 3) => {
   for (let i = 0; i < maxRetries; i++) {
     try {
       await checkFirestoreConnection();
-      console.log('Firestore connection established successfully');
+      // Firestore connection established successfully
       return true;
     } catch (error) {
       console.warn(`Firestore connection attempt ${i + 1} failed:`, error);
@@ -232,7 +227,7 @@ export const handleFirestoreError = (error: any) => {
     setTimeout(async () => {
       try {
         await checkFirestoreConnection();
-        console.log('Firestore connection recovered after BloomFilter error');
+        // Firestore connection recovered after BloomFilter error
       } catch (recoveryError) {
         console.error('Failed to recover from BloomFilter error:', recoveryError);
       }
@@ -276,7 +271,7 @@ export const createFirestoreQueryWithRetry = async (queryFn: () => any, maxRetri
 
 // BloomFilter 오류 방지를 위한 추가 설정
 export const setupFirestoreErrorHandling = () => {
-  console.log('Setting up Firestore error handling for BloomFilter errors...');
+  // Setting up Firestore error handling for BloomFilter errors
   
   // 전역 오류 핸들러 설정
   if (typeof window !== 'undefined') {
@@ -292,7 +287,7 @@ export const setupFirestoreErrorHandling = () => {
         }
       });
       
-      console.log('Firestore error handling setup completed');
+      // Firestore error handling setup completed
     }
   }
 };
@@ -305,7 +300,7 @@ export const getFirestoreWithBloomFilterProtection = () => {
   }
   
   // BloomFilter 오류 방지를 위한 추가 설정
-  console.log('Firestore instance retrieved with BloomFilter protection');
+  // Firestore instance retrieved with BloomFilter protection
   return db;
 };
 
@@ -323,7 +318,7 @@ export const createSafeCollectionReference = (collectionName: string) => {
 
 // BloomFilter 오류 방지를 위한 추가 설정
 export const initializeFirestoreWithComprehensiveProtection = () => {
-  console.log('Initializing Firestore with comprehensive BloomFilter protection...');
+  // Initializing Firestore with comprehensive BloomFilter protection
   
   // 모든 보호 기능 초기화
   setupFirestoreErrorHandling();
@@ -346,7 +341,7 @@ export const initializeFirestoreWithComprehensiveProtection = () => {
     });
   }
   
-  console.log('Comprehensive Firestore protection initialized');
+  // Comprehensive Firestore protection initialized
 };
 
 // BloomFilter 오류 방지를 위한 추가 설정
@@ -388,13 +383,13 @@ export const executeFirestoreOperationWithProtection = async (operation: () => P
 
 // BloomFilter 오류 방지를 위한 추가 설정
 export const monitorFirestoreHealth = () => {
-  console.log('Starting Firestore health monitoring...');
+  // Starting Firestore health monitoring
   
   // 주기적으로 Firestore 연결 상태 확인
   const healthCheckInterval = setInterval(async () => {
     try {
       await checkFirestoreConnection();
-      console.log('Firestore health check passed');
+      // Firestore health check passed
     } catch (error) {
       console.warn('Firestore health check failed:', error);
       
@@ -408,7 +403,7 @@ export const monitorFirestoreHealth = () => {
   // 정리 함수 반환
   return () => {
     clearInterval(healthCheckInterval);
-    console.log('Firestore health monitoring stopped');
+    // Firestore health monitoring stopped
   };
 };
 
@@ -425,17 +420,17 @@ export const getFirestoreStatus = () => {
 
 // BloomFilter 오류 방지를 위한 추가 설정
 export const resetFirestoreConnection = async () => {
-  console.log('Attempting to reset Firestore connection...');
+  // Attempting to reset Firestore connection
   
   try {
     // 기존 연결 정리
     if (db) {
-      console.log('Cleaning up existing Firestore connection...');
+      // Cleaning up existing Firestore connection
     }
     
     // 새로운 연결 시도
     await checkFirestoreConnection();
-    console.log('Firestore connection reset successful');
+          // Firestore connection reset successful
     return true;
   } catch (error) {
     console.error('Failed to reset Firestore connection:', error);
@@ -471,8 +466,6 @@ export const createFirestoreQueryWithRetryAndProtection = async (queryFn: () => 
 
 // BloomFilter 오류 방지를 위한 추가 설정
 export const initializeFirestoreWithFullProtection = () => {
-  console.log('Initializing Firestore with full BloomFilter protection...');
-  
   // 모든 보호 기능 초기화
   initializeFirestoreWithComprehensiveProtection();
   
@@ -482,7 +475,6 @@ export const initializeFirestoreWithFullProtection = () => {
   // 정리 함수 반환
   return () => {
     stopHealthMonitoring();
-    console.log('Full Firestore protection cleanup completed');
   };
 };
 
@@ -490,7 +482,6 @@ export const initializeFirestoreWithFullProtection = () => {
 export const createFirestoreQueryWithFullProtection = (collectionName: string, options: any = {}) => {
   try {
     const collectionRef = createSafeCollectionReference(collectionName);
-    console.log(`Firestore query created with full protection for: ${collectionName}`);
     return collectionRef;
   } catch (error) {
     logFirestoreError(error, `creating query with full protection for ${collectionName}`);
@@ -560,7 +551,6 @@ export const createFirestoreQueryWithRetryAndFullProtection = async (queryFn: ()
 export const createSafeFirestoreQuery = (collectionName: string, options: any = {}) => {
   try {
     const query = collection(db, collectionName);
-    console.log(`Safe Firestore query created for collection: ${collectionName}`);
     return query;
   } catch (error) {
     console.error(`Failed to create safe Firestore query for ${collectionName}:`, error);
@@ -604,7 +594,7 @@ export const safeFirestoreOperation = async (operation: () => Promise<any>) => {
 
 // BloomFilter 오류 방지를 위한 추가 설정
 export const initializeFirestoreWithBloomFilterProtection = () => {
-  console.log('Initializing Firestore with BloomFilter protection...');
+  // Initializing Firestore with BloomFilter protection
   
   // 전역 오류 핸들러가 이미 설정되어 있는지 확인
   if (typeof window !== 'undefined' && !(window as any).__firestoreBloomFilterProtected) {
@@ -620,6 +610,6 @@ export const initializeFirestoreWithBloomFilterProtection = () => {
       }
     });
     
-    console.log('BloomFilter protection initialized');
+    // BloomFilter protection initialized
   }
 };

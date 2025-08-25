@@ -16,6 +16,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/use-auth';
 import { Photo, UploadProgress } from '@/types/album';
 import { FirebaseStorageService } from '@/lib/firebase-storage';
+import { uploadToGooglePhotosForAlbum, deleteFromGooglePhotos } from '@/lib/google-photos-service';
 import { useAlbums } from './use-albums';
 export const usePhotos = (albumId: string) => {
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -73,21 +74,36 @@ export const usePhotos = (albumId: string) => {
           status: 'uploading'
         }]);
         try {
-          // Storage에 파일 업로드
-          const urls = await FirebaseStorageService.uploadPhoto(
-            albumId, 
-            photoId, 
-            file,
-            (progress) => {
-              setUploadProgress(prev => 
-                prev.map(item => 
-                  item.filename === file.name 
-                    ? { ...item, progress }
-                    : item
-                )
-              );
-            }
-          );
+          // Google Photos에 업로드 시도
+          let urls;
+          let mediaItemId = '';
+          
+          try {
+            const googlePhotosResult = await uploadToGooglePhotosForAlbum(file, fileName, albumId);
+            urls = {
+              originalUrl: googlePhotosResult.originalUrl,
+              thumbnailUrl: googlePhotosResult.thumbnailUrl,
+              previewUrl: googlePhotosResult.previewUrl
+            };
+            mediaItemId = googlePhotosResult.mediaItemId;
+          } catch (googleError) {
+            console.warn('Google Photos upload failed, falling back to Firebase:', googleError);
+            // Google Photos 실패 시 Firebase Storage로 fallback
+            urls = await FirebaseStorageService.uploadPhoto(
+              albumId, 
+              photoId, 
+              file,
+              (progress) => {
+                setUploadProgress(prev => 
+                  prev.map(item => 
+                    item.filename === file.name 
+                      ? { ...item, progress }
+                      : item
+                  )
+                );
+              }
+            );
+          }
           // 이미지 메타데이터 추출 (간단한 버전)
           const img = new Image();
           const { width, height } = await new Promise<{ width: number; height: number }>((resolve) => {
@@ -106,7 +122,9 @@ export const usePhotos = (albumId: string) => {
             width,
             height,
             uploadedAt: serverTimestamp(),
-            uploadedBy: user.uid
+            uploadedBy: user.uid,
+            mediaItemId: mediaItemId, // Google Photos mediaItemId 저장
+            storageType: mediaItemId ? 'google-photos' : 'firebase-storage' // 저장소 타입 구분
           });
           // 업로드 완료 상태 업데이트
           setUploadProgress(prev => 
@@ -157,9 +175,22 @@ export const usePhotos = (albumId: string) => {
   const deletePhoto = async (photoId: string): Promise<void> => {
     if (!user || !albumId) throw new Error('로그인이 필요합니다.');
     try {
-      // Firestore에서 문서 삭제만 수행 (Storage 삭제는 무시)
+      // 삭제할 사진 정보 가져오기
+      const photoToDelete = photos.find(p => p.id === photoId);
+      
+      // Firestore에서 문서 삭제
       const photoRef = doc(db, 'albums', albumId, 'photos', photoId);
       await deleteDoc(photoRef);
+      
+      // Google Photos에서도 삭제 (mediaItemId가 있는 경우)
+      if (photoToDelete?.mediaItemId) {
+        try {
+          await deleteFromGooglePhotos(photoToDelete.mediaItemId);
+        } catch (googleError) {
+          console.warn('Google Photos deletion failed:', googleError);
+          // Google Photos 삭제 실패는 무시하고 계속 진행
+        }
+      }
       // 앨범의 사진 개수 업데이트
       const newPhotoCount = Math.max(0, photos.length - 1);
       await updatePhotoCount(albumId, newPhotoCount);

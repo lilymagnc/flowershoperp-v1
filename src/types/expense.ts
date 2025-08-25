@@ -111,14 +111,20 @@ export interface ExpenseRequest {
 export interface Budget {
   id: string;
   name: string;
+  description?: string;
   category: ExpenseCategory;
   // 예산 기간
   fiscalYear: number;
   fiscalMonth?: number; // null이면 연간 예산
+  period?: 'monthly' | 'quarterly' | 'yearly';
+  startDate?: string;
+  endDate?: string;
   // 예산 금액
   allocatedAmount: number;
   usedAmount: number;
   remainingAmount: number;
+  // 알림 설정
+  alertThreshold?: number;
   // 조직 정보
   branchId?: string;
   branchName?: string;
@@ -326,4 +332,93 @@ export const getBudgetStatus = (budget: Budget): 'safe' | 'warning' | 'danger' =
   if (usage < 70) return 'safe';
   if (usage < 90) return 'warning';
   return 'danger';
+};
+
+// ===== 꽃집 특화 지출 관리 =====
+
+// 꽃집 지출 카테고리
+export enum FlowerShopExpenseCategory {
+  FLOWERS = 'flowers',           // 꽃 구매
+  PACKAGING = 'packaging',       // 포장재/소모품
+  MARKETING = 'marketing',       // 마케팅/홍보
+  OPERATIONS = 'operations',     // 운영비
+  LABOR = 'labor',              // 인건비
+  OTHER = 'other'               // 기타
+}
+
+// 지출 인터페이스 (꽃집 특화)
+export interface Expense {
+  id: string;
+  budgetId?: string;            // 연동된 예산 ID
+  category: FlowerShopExpenseCategory;
+  amount: number;
+  description: string;
+  date: Date;
+  paymentMethod: 'cash' | 'card' | 'transfer';
+  receipt?: string;             // 영수증 URL
+  tags?: string[];              // 태그 (예: "장미", "생일", "웨딩")
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// 지출 분석 데이터
+export interface ExpenseAnalytics {
+  period: {
+    startDate: Date;
+    endDate: Date;
+  };
+  // 카테고리별 분석
+  categoryBreakdown: {
+    category: FlowerShopExpenseCategory;
+    amount: number;
+    count: number;
+    percentage: number;
+  }[];
+  // 월별 트렌드
+  monthlyTrend: {
+    month: string;
+    amount: number;
+    count: number;
+    budgetUsage: number;
+  }[];
+  // 주요 지표
+  totalAmount: number;
+  totalCount: number;
+  averageAmount: number;
+  budgetUtilization: number;
+}
+
+// 꽃집 카테고리 라벨
+export const FLOWER_SHOP_CATEGORY_LABELS: Record<FlowerShopExpenseCategory, string> = {
+  [FlowerShopExpenseCategory.FLOWERS]: '꽃 구매',
+  [FlowerShopExpenseCategory.PACKAGING]: '포장재/소모품',
+  [FlowerShopExpenseCategory.MARKETING]: '마케팅/홍보',
+  [FlowerShopExpenseCategory.OPERATIONS]: '운영비',
+  [FlowerShopExpenseCategory.LABOR]: '인건비',
+  [FlowerShopExpenseCategory.OTHER]: '기타'
+};
+
+// 꽃집 카테고리 색상
+export const FLOWER_SHOP_CATEGORY_COLORS: Record<FlowerShopExpenseCategory, string> = {
+  [FlowerShopExpenseCategory.FLOWERS]: 'text-pink-600',
+  [FlowerShopExpenseCategory.PACKAGING]: 'text-blue-600',
+  [FlowerShopExpenseCategory.MARKETING]: 'text-purple-600',
+  [FlowerShopExpenseCategory.OPERATIONS]: 'text-gray-600',
+  [FlowerShopExpenseCategory.LABOR]: 'text-green-600',
+  [FlowerShopExpenseCategory.OTHER]: 'text-orange-600'
+};
+
+// 예산별 실제 사용 금액 계산
+export const calculateBudgetUsageFromExpenses = (budget: Budget, expenses: Expense[]): number => {
+  const budgetExpenses = expenses.filter(exp => exp.budgetId === budget.id);
+  const totalUsed = budgetExpenses.reduce((sum, exp) => sum + exp.amount, 0);
+  return budget.allocatedAmount > 0 ? (totalUsed / budget.allocatedAmount) * 100 : 0;
+};
+
+// 지출 상태 색상
+export const getExpenseStatusColor = (amount: number, budgetAmount: number): string => {
+  const usage = (amount / budgetAmount) * 100;
+  if (usage >= 100) return 'text-red-600';
+  if (usage >= 80) return 'text-yellow-600';
+  return 'text-green-600';
 };

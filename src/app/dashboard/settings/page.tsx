@@ -52,6 +52,7 @@ import BackupManagement from "./components/backup-management";
 import { EmailTemplateEditor } from "@/components/email-template-editor";
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
 import { storage } from '@/lib/firebase';
+import { uploadToGooglePhotos, deleteFromGooglePhotos } from '@/lib/google-photos-service';
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
@@ -151,11 +152,31 @@ export default function SettingsPage() {
     setDragOverItem(null);
   };
 
-  // 파일 업로드 함수
+  // Google Photos URL에서 mediaItemId 추출
+  const extractMediaItemId = (url: string): string | null => {
+    try {
+      // Google Photos 공유 URL에서 mediaItemId 추출
+      const match = url.match(/\/media\/([^\/\?]+)/);
+      return match ? match[1] : null;
+    } catch (error) {
+      console.warn('Failed to extract mediaItemId from URL:', error);
+      return null;
+    }
+  };
+
+  // 파일 업로드 함수 (Google Photos 사용)
   const uploadFile = async (file: File, path: string): Promise<string> => {
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    return await getDownloadURL(storageRef);
+    try {
+      // Google Photos에 업로드 시도
+      const fileName = path.split('/').pop() || file.name;
+      return await uploadToGooglePhotos(file, fileName);
+    } catch (error) {
+      console.warn('Google Photos upload failed, falling back to Firebase:', error);
+      // Google Photos 실패 시 Firebase Storage로 fallback
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      return await getDownloadURL(storageRef);
+    }
   };
 
   // 로고 업로드 처리
@@ -187,10 +208,18 @@ export default function SettingsPage() {
       setUploadingLogo(true);
       
       // 기존 로고 삭제
-      if (localSettings.brandLogo && localSettings.brandLogo.includes('firebasestorage')) {
+      if (localSettings.brandLogo) {
         try {
-          const oldLogoRef = ref(storage, localSettings.brandLogo);
-          await deleteObject(oldLogoRef);
+          if (localSettings.brandLogo.includes('firebasestorage')) {
+            const oldLogoRef = ref(storage, localSettings.brandLogo);
+            await deleteObject(oldLogoRef);
+          } else if (localSettings.brandLogo.includes('googleusercontent.com')) {
+            // Google Photos에서 삭제 (mediaItemId 추출 필요)
+            const mediaItemId = extractMediaItemId(localSettings.brandLogo);
+            if (mediaItemId) {
+              await deleteFromGooglePhotos(mediaItemId);
+            }
+          }
         } catch (error) {
           console.log('기존 로고 삭제 실패 (무시됨):', error);
         }
@@ -247,10 +276,18 @@ export default function SettingsPage() {
       setUploadingFavicon(true);
       
       // 기존 파비콘 삭제
-      if (localSettings.brandFavicon && localSettings.brandFavicon.includes('firebasestorage')) {
+      if (localSettings.brandFavicon) {
         try {
-          const oldFaviconRef = ref(storage, localSettings.brandFavicon);
-          await deleteObject(oldFaviconRef);
+          if (localSettings.brandFavicon.includes('firebasestorage')) {
+            const oldFaviconRef = ref(storage, localSettings.brandFavicon);
+            await deleteObject(oldFaviconRef);
+          } else if (localSettings.brandFavicon.includes('googleusercontent.com')) {
+            // Google Photos에서 삭제 (mediaItemId 추출 필요)
+            const mediaItemId = extractMediaItemId(localSettings.brandFavicon);
+            if (mediaItemId) {
+              await deleteFromGooglePhotos(mediaItemId);
+            }
+          }
         } catch (error) {
           console.log('기존 파비콘 삭제 실패 (무시됨):', error);
         }
@@ -280,14 +317,22 @@ export default function SettingsPage() {
 
   // 로고 삭제
   const handleLogoDelete = async () => {
-    if (!localSettings.brandLogo || !localSettings.brandLogo.includes('firebasestorage')) {
+    if (!localSettings.brandLogo) {
       setLocalSettings(prev => ({ ...prev, brandLogo: '' }));
       return;
     }
 
     try {
-      const logoRef = ref(storage, localSettings.brandLogo);
-      await deleteObject(logoRef);
+      if (localSettings.brandLogo.includes('firebasestorage')) {
+        const logoRef = ref(storage, localSettings.brandLogo);
+        await deleteObject(logoRef);
+      } else if (localSettings.brandLogo.includes('googleusercontent.com')) {
+        const mediaItemId = extractMediaItemId(localSettings.brandLogo);
+        if (mediaItemId) {
+          await deleteFromGooglePhotos(mediaItemId);
+        }
+      }
+      
       setLocalSettings(prev => ({ ...prev, brandLogo: '' }));
       
       toast({
@@ -306,14 +351,22 @@ export default function SettingsPage() {
 
   // 파비콘 삭제
   const handleFaviconDelete = async () => {
-    if (!localSettings.brandFavicon || !localSettings.brandFavicon.includes('firebasestorage')) {
+    if (!localSettings.brandFavicon) {
       setLocalSettings(prev => ({ ...prev, brandFavicon: '' }));
       return;
     }
 
     try {
-      const faviconRef = ref(storage, localSettings.brandFavicon);
-      await deleteObject(faviconRef);
+      if (localSettings.brandFavicon.includes('firebasestorage')) {
+        const faviconRef = ref(storage, localSettings.brandFavicon);
+        await deleteObject(faviconRef);
+      } else if (localSettings.brandFavicon.includes('googleusercontent.com')) {
+        const mediaItemId = extractMediaItemId(localSettings.brandFavicon);
+        if (mediaItemId) {
+          await deleteFromGooglePhotos(mediaItemId);
+        }
+      }
+      
       setLocalSettings(prev => ({ ...prev, brandFavicon: '' }));
       
       toast({

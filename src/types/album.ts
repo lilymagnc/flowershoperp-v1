@@ -11,6 +11,8 @@ export interface Album {
   createdAt: Timestamp;
   updatedAt: Timestamp;
   createdBy: string;
+  googlePhotosAlbumId?: string; // Google Photos 앨범 ID
+  googlePhotosShareUrl?: string; // Google Photos 공유 URL
 }
 export interface Photo {
   id: string;
@@ -24,6 +26,8 @@ export interface Photo {
   height: number;
   uploadedAt: Timestamp;
   uploadedBy: string;
+  mediaItemId?: string; // Google Photos mediaItemId
+  storageType?: 'google-photos' | 'firebase-storage'; // 저장소 타입
 }
 export interface CreateAlbumData {
   title: string;

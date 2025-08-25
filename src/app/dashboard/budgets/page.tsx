@@ -14,25 +14,67 @@ import {
   Calendar,
   BarChart3,
   Settings,
-  PieChart
+  PieChart,
+  Flower,
+  Package,
+  Megaphone,
+  Users,
+  Bell,
+  Smartphone
 } from 'lucide-react';
 import { BudgetForm } from './components/budget-form';
 import { BudgetList } from './components/budget-list';
 import { BudgetAnalytics } from './components/budget-analytics';
 import { BudgetAlerts } from './components/budget-alerts';
+
+import { ExpenseList } from './components/expense-list';
 import { useBudgets } from '@/hooks/use-budgets';
+import { useExpenses } from '@/hooks/use-expenses';
+import { Budget } from '@/types/expense';
+
 export default function BudgetsPage() {
-  const [activeTab, setActiveTab] = useState('list');
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const { budgets, loading, stats } = useBudgets();
+  const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
+
+  
+  // 지출 데이터 로드
+  const { expenses, loading: expensesLoading, addExpense, deleteExpense } = useExpenses();
+  
+  // 예산 데이터 로드 (지출과 연동)
+  const { budgets, loading: budgetsLoading, stats, createBudget, updateBudget } = useBudgets(expenses);
+  
+  const loading = budgetsLoading || expensesLoading;
+
   const handleCreateBudget = () => {
     setShowCreateForm(true);
     setActiveTab('create');
   };
+
   const handleBudgetCreated = () => {
     setShowCreateForm(false);
-    setActiveTab('list');
+    setEditingBudget(null);
+    // 수정 후에는 예산 목록 탭으로 이동, 생성 후에는 대시보드로 이동
+    setActiveTab(editingBudget ? 'list' : 'dashboard');
   };
+
+  const handleEditBudget = (budget: Budget) => {
+    // Budget 타입을 BudgetForm의 initialData 타입으로 변환
+    const initialData = {
+      name: budget.name,
+      category: budget.category as any, // 타입 변환
+      period: budget.period || 'monthly',
+      allocatedAmount: budget.allocatedAmount,
+      startDate: budget.startDate || new Date().toISOString().split('T')[0],
+      endDate: budget.endDate || new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+      description: budget.description || '',
+      alertThreshold: budget.alertThreshold || 80,
+    };
+    setEditingBudget(budget);
+    setShowCreateForm(true);
+    setActiveTab('create');
+  };
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ko-KR', {
       style: 'currency',
@@ -40,295 +82,257 @@ export default function BudgetsPage() {
       notation: 'compact'
     }).format(amount);
   };
+
   const getUsageColor = (usage: number) => {
     if (usage >= 100) return 'text-red-600';
     if (usage >= 80) return 'text-yellow-600';
     return 'text-green-600';
   };
+
+  const getUsageBgColor = (usage: number) => {
+    if (usage >= 100) return 'bg-red-600';
+    if (usage >= 80) return 'bg-yellow-600';
+    return 'bg-green-600';
+  };
+
+  // 꽃집 특화 카테고리별 예산 템플릿
+  const flowerShopTemplates = [
+    { id: 'flowers', name: '꽃 구매', icon: Flower, color: 'bg-pink-100', textColor: 'text-pink-600' },
+    { id: 'packaging', name: '포장재/소모품', icon: Package, color: 'bg-blue-100', textColor: 'text-blue-600' },
+    { id: 'marketing', name: '마케팅/홍보', icon: Megaphone, color: 'bg-purple-100', textColor: 'text-purple-600' },
+    { id: 'operations', name: '운영비', icon: Settings, color: 'bg-gray-100', textColor: 'text-gray-600' },
+    { id: 'labor', name: '인건비', icon: Users, color: 'bg-green-100', textColor: 'text-green-600' }
+  ];
+
+  // 빠른 액션 버튼들
+  const quickActions = [
+    { name: '예산 조정', icon: Target, action: () => setActiveTab('list') },
+    { name: '알림 설정', icon: Bell, action: () => setActiveTab('alerts') },
+    { name: '모바일 앱', icon: Smartphone, action: () => window.open('/mobile', '_blank') }
+  ];
+
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container mx-auto p-4 space-y-6">
       {/* 헤더 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">예산 관리</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold">예산 관리</h1>
           <p className="text-muted-foreground mt-1">
-            연간/월간 예산을 설정하고 사용 현황을 모니터링합니다
+            꽃집 운영에 최적화된 간편한 예산 관리
           </p>
         </div>
-        <Button onClick={handleCreateBudget} className="flex items-center gap-2">
-          <Plus className="h-4 w-4" />
-          새 예산 생성
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={handleCreateBudget} className="flex items-center gap-2">
+            <Plus className="h-4 w-4" />
+            새 예산
+          </Button>
+        </div>
       </div>
-      {/* 통계 카드 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+
+      {/* 빠른 액션 버튼들 */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {quickActions.map((action) => (
+          <Button
+            key={action.name}
+            variant="outline"
+            onClick={action.action}
+            className="flex flex-col items-center gap-2 h-auto py-4"
+          >
+            <action.icon className="h-5 w-5" />
+            <span className="text-xs">{action.name}</span>
+          </Button>
+        ))}
+      </div>
+
+      {/* 핵심 통계 카드 - 간소화 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Target className="h-6 w-6 text-blue-600" />
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <DollarSign className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">총 예산</p>
-                <p className="text-2xl font-bold">{stats.totalBudgets}</p>
-                <p className="text-xs text-blue-600">
-                  활성 예산
-                </p>
+                <p className="text-sm text-muted-foreground">이번 달 예산</p>
+                <p className="text-xl font-bold">{formatCurrency(stats.totalAllocated)}</p>
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <DollarSign className="h-6 w-6 text-green-600" />
-              </div>
-              <div>
-                <p className="text-sm text-muted-foreground">할당 금액</p>
-                <p className="text-2xl font-bold">{formatCurrency(stats.totalAllocated)}</p>
-                <p className="text-xs text-green-600">
-                  총 예산 규모
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-purple-100 rounded-lg">
-                <TrendingUp className="h-6 w-6 text-purple-600" />
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <TrendingUp className="h-5 w-5 text-green-600" />
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">사용 금액</p>
-                <p className="text-2xl font-bold">{formatCurrency(stats.totalUsed)}</p>
+                <p className="text-xl font-bold">{formatCurrency(stats.totalUsed)}</p>
                 <p className={`text-xs ${getUsageColor(stats.averageUsage)}`}>
-                  사용률 {stats.averageUsage.toFixed(1)}%
+                  {stats.averageUsage.toFixed(1)}% 사용
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-red-100 rounded-lg">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <Target className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">예산 초과</p>
-                <p className="text-2xl font-bold">{stats.overBudgetCount}</p>
-                <p className="text-xs text-red-600">
-                  주의 필요
+                <p className="text-sm text-muted-foreground">남은 예산</p>
+                <p className="text-xl font-bold">{formatCurrency(stats.totalRemaining)}</p>
+                <p className="text-xs text-purple-600">
+                  안전 마진
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
-      {/* 예산 사용률 요약 */}
+
+      {/* 예산 사용률 시각화 - 간소화 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <BarChart3 className="h-5 w-5" />
-            예산 사용률 현황
+            이번 달 예산 현황
           </CardTitle>
-          <CardDescription>
-            전체 예산 대비 사용 현황과 잔여 예산
-          </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="text-center">
-              <div className="relative w-32 h-32 mx-auto mb-4">
-                <svg className="w-32 h-32 transform -rotate-90" viewBox="0 0 36 36">
-                  <path
-                    className="text-gray-200"
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    fill="transparent"
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                  <path
-                    className={getUsageColor(stats.averageUsage).replace('text-', 'text-')}
-                    stroke="currentColor"
-                    strokeWidth="3"
-                    strokeDasharray={`${stats.averageUsage}, 100`}
-                    strokeLinecap="round"
-                    fill="transparent"
-                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-2xl font-bold">{stats.averageUsage.toFixed(1)}%</span>
-                </div>
-              </div>
-              <p className="text-sm text-muted-foreground">평균 사용률</p>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">전체 예산 사용률</span>
+              <span className="text-sm font-bold">{stats.averageUsage.toFixed(1)}%</span>
             </div>
-            <div className="space-y-4">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">할당 예산</span>
-                  <span className="text-sm">{formatCurrency(stats.totalAllocated)}</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: '100%' }}></div>
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">사용 금액</span>
-                  <span className="text-sm">{formatCurrency(stats.totalUsed)}</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className={`h-2 rounded-full ${
-                      stats.averageUsage >= 100 ? 'bg-red-600' :
-                      stats.averageUsage >= 80 ? 'bg-yellow-600' : 'bg-green-600'
-                    }`}
-                    style={{ width: `${Math.min(stats.averageUsage, 100)}%` }}
-                  ></div>
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">잔여 예산</span>
-                  <span className="text-sm">{formatCurrency(stats.totalRemaining)}</span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
-                  <div 
-                    className="bg-gray-400 h-2 rounded-full" 
-                    style={{ width: `${Math.max(0, 100 - stats.averageUsage)}%` }}
-                  ></div>
-                </div>
-              </div>
+            <div className="w-full bg-gray-200 rounded-full h-3">
+              <div 
+                className={`h-3 rounded-full transition-all duration-300 ${getUsageBgColor(stats.averageUsage)}`}
+                style={{ width: `${Math.min(stats.averageUsage, 100)}%` }}
+              ></div>
             </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-green-600 rounded-full"></div>
-                  <span className="text-sm">정상 범위</span>
-                </div>
-                <span className="text-sm font-medium">
-                  {budgets.filter(b => {
-                    const usage = b.allocatedAmount > 0 ? (b.usedAmount / b.allocatedAmount) * 100 : 0;
-                    return usage < 80;
-                  }).length}개
-                </span>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div>
+                <span className="text-muted-foreground">할당:</span>
+                <span className="ml-2 font-medium">{formatCurrency(stats.totalAllocated)}</span>
               </div>
-              <div className="flex items-center justify-between p-3 bg-yellow-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-yellow-600 rounded-full"></div>
-                  <span className="text-sm">주의 필요</span>
-                </div>
-                <span className="text-sm font-medium">
-                  {budgets.filter(b => {
-                    const usage = b.allocatedAmount > 0 ? (b.usedAmount / b.allocatedAmount) * 100 : 0;
-                    return usage >= 80 && usage < 100;
-                  }).length}개
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-3 bg-red-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 bg-red-600 rounded-full"></div>
-                  <span className="text-sm">예산 초과</span>
-                </div>
-                <span className="text-sm font-medium">{stats.overBudgetCount}개</span>
+              <div>
+                <span className="text-muted-foreground">사용:</span>
+                <span className="ml-2 font-medium">{formatCurrency(stats.totalUsed)}</span>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
-      {/* 메인 콘텐츠 */}
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="list" className="flex items-center gap-2">
-            <Target className="h-4 w-4" />
-            예산 목록
-          </TabsTrigger>
-          <TabsTrigger value="create" className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            새 예산
-          </TabsTrigger>
-          <TabsTrigger value="alerts" className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />
-            알림
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="flex items-center gap-2">
-            <PieChart className="h-4 w-4" />
-            분석
-          </TabsTrigger>
-          <TabsTrigger value="settings" className="flex items-center gap-2">
-            <Settings className="h-4 w-4" />
-            설정
-          </TabsTrigger>
-        </TabsList>
-        <TabsContent value="list" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-5 w-5" />
-                예산 목록
-              </CardTitle>
-              <CardDescription>
-                생성된 예산을 확인하고 관리합니다
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <BudgetList 
-                budgets={budgets} 
-                loading={loading}
-                onRefresh={() => window.location.reload()}
-              />
-            </CardContent>
-          </Card>
+
+      {/* 꽃집 특화 예산 템플릿 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Flower className="h-5 w-5" />
+            예산 템플릿
+          </CardTitle>
+          <CardDescription>
+            빠른 예산 설정을 위한 꽃집 특화 카테고리
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {flowerShopTemplates.map((template) => (
+              <Button
+                key={template.id}
+                variant="outline"
+                onClick={() => {
+                  setShowCreateForm(true);
+                  setActiveTab('create');
+                }}
+                className="flex items-center gap-3 h-auto p-4 justify-start"
+              >
+                <div className={`p-2 rounded-lg ${template.color}`}>
+                  <template.icon className={`h-5 w-5 ${template.textColor}`} />
+                </div>
+                <div className="text-left">
+                  <div className="font-medium">{template.name}</div>
+                  <div className="text-xs text-muted-foreground">예산 설정</div>
+                </div>
+              </Button>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+
+             {/* 탭 네비게이션 */}
+       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+         <TabsList className="grid w-full grid-cols-5">
+           <TabsTrigger value="dashboard">대시보드</TabsTrigger>
+           <TabsTrigger value="list">예산 목록</TabsTrigger>
+           <TabsTrigger value="expenses">지출 관리</TabsTrigger>
+           <TabsTrigger value="analytics">분석</TabsTrigger>
+           <TabsTrigger value="alerts">알림</TabsTrigger>
+         </TabsList>
+
+        <TabsContent value="dashboard" className="space-y-4">
+          {/* 대시보드 내용은 위의 카드들로 구성됨 */}
         </TabsContent>
-        <TabsContent value="create" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                새 예산 생성
-              </CardTitle>
-              <CardDescription>
-                연간 또는 월간 예산을 설정합니다
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <BudgetForm 
-                onSuccess={handleBudgetCreated}
-                onCancel={() => setActiveTab('list')}
-              />
-            </CardContent>
-          </Card>
-        </TabsContent>
-        <TabsContent value="alerts" className="mt-6">
-          <BudgetAlerts />
-        </TabsContent>
-        <TabsContent value="analytics" className="mt-6">
-          <BudgetAnalytics />
-        </TabsContent>
-        <TabsContent value="settings" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="h-5 w-5" />
-                예산 설정
-              </CardTitle>
-              <CardDescription>
-                예산 관리 관련 설정을 구성합니다
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
-                <Settings className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">예산 설정 기능은 준비 중입니다.</p>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
+
+                 <TabsContent value="list">
+           <BudgetList 
+             budgets={budgets} 
+             onEdit={handleEditBudget}
+           />
+         </TabsContent>
+
+         <TabsContent value="expenses">
+           <ExpenseList 
+             expenses={expenses} 
+             loading={expensesLoading}
+             onDelete={deleteExpense}
+           />
+         </TabsContent>
+
+         <TabsContent value="analytics">
+           <BudgetAnalytics budgets={budgets} stats={stats} expenses={expenses} />
+         </TabsContent>
+
+         <TabsContent value="alerts">
+           <BudgetAlerts budgets={budgets} />
+         </TabsContent>
+
+                 <TabsContent value="create">
+           {showCreateForm && (
+             <BudgetForm 
+               onClose={() => {
+                 setShowCreateForm(false);
+                 setEditingBudget(null);
+               }}
+               onSubmit={handleBudgetCreated}
+               isEditing={!!editingBudget}
+               onSuccess={() => {
+                 // 성공 후 추가 작업이 필요한 경우 여기에 추가
+                 console.log('Budget operation completed successfully');
+               }}
+               createBudget={createBudget}
+               updateBudget={updateBudget}
+               initialData={editingBudget ? {
+                 id: editingBudget.id,
+                 name: editingBudget.name,
+                 category: editingBudget.category as any,
+                 period: editingBudget.period || 'monthly',
+                 allocatedAmount: editingBudget.allocatedAmount,
+                 startDate: editingBudget.startDate || new Date().toISOString().split('T')[0],
+                 endDate: editingBudget.endDate || new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+                 description: editingBudget.description || '',
+                 alertThreshold: editingBudget.alertThreshold || 80,
+               } : undefined}
+             />
+           )}
+         </TabsContent>
       </Tabs>
+
     </div>
   );
 }

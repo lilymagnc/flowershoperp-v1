@@ -13,7 +13,7 @@ import * as XLSX from "xlsx";
 import { Timestamp } from "firebase/firestore";
 
 interface ExcelUploadDialogProps {
-  isOpen: boolean;
+  open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
@@ -48,7 +48,7 @@ interface UploadResult {
   uploadedOrderIds: string[]; // 업로드된 주문 ID들 저장
 }
 
-export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogProps) {
+export function ExcelUploadDialog({ open, onOpenChange }: ExcelUploadDialogProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadResult, setUploadResult] = useState<UploadResult | null>(null);
@@ -433,7 +433,7 @@ export function ExcelUploadDialog({ isOpen, onOpenChange }: ExcelUploadDialogPro
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

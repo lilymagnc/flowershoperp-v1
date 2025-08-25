@@ -12,30 +12,34 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { useSettings } from "@/hooks/use-settings";
 import { useSearchParams } from "next/navigation";
-import { useRouter } from "next/navigation";
-
 interface MessagePrintDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  orders: Order[];
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+  onSubmit: (data: { 
+    orderId: string, 
+    labelType: string, 
+    startPosition: number, 
+    messageFont: string, 
+    messageFontSize: number,
+    senderFont: string,
+    senderFontSize: number,
+    messageContent: string,
+    senderName: string,
+    selectedPositions: number[]
+  }) => void;
+  order: Order;
 }
-
 const labelTypes = [
     { value: 'formtec-3107', label: '폼텍 3107 (6칸)', cells: 6, gridCols: 'grid-cols-2', height: '93mm', className: 'gap-x-[2mm]' },
     { value: 'formtec-3108', label: '폼텍 3108 (8칸)', cells: 8, gridCols: 'grid-cols-2', height: '67.5mm', className: 'gap-x-[2mm]' },
     { value: 'formtec-3109', label: '폼텍 3109 (12칸)', cells: 12, gridCols: 'grid-cols-2', height: '45mm', className: 'gap-x-[2mm]' },
 ];
-
-export function MessagePrintDialog({ open, onOpenChange, orders }: MessagePrintDialogProps) {
+export function MessagePrintDialog({ isOpen, onOpenChange, onSubmit, order }: MessagePrintDialogProps) {
   const { settings } = useSettings();
   const searchParams = useSearchParams();
-  const router = useRouter();
-  
-  // 첫 번째 주문을 사용 (기존과 동일한 방식)
-  const order = orders[0];
   
   // 시스템 설정에서 폰트 목록 가져오기
-  const fontOptions = (settings?.availableFonts || [
+  const fontOptions = (settings.availableFonts || [
     'Noto Sans KR',
     'Malgun Gothic',
     'Nanum Gothic',
@@ -68,39 +72,32 @@ export function MessagePrintDialog({ open, onOpenChange, orders }: MessagePrintD
   const [labelType, setLabelType] = useState(getInitialValue('labelType', 'formtec-3108'));
   const [startPosition, setStartPosition] = useState(getInitialNumberValue('start', 1));
   const [selectedPositions, setSelectedPositions] = useState<number[]>(getInitialPositions());
-  const [messageFont, setMessageFont] = useState(getInitialValue('messageFont', fontOptions[0]?.value || 'Noto Sans KR'));
+  const [messageFont, setMessageFont] = useState(getInitialValue('messageFont', fontOptions[0].value));
   const [messageFontSize, setMessageFontSize] = useState(getInitialNumberValue('messageFontSize', 14));
-  const [senderFont, setSenderFont] = useState(getInitialValue('senderFont', fontOptions[0]?.value || 'Noto Sans KR'));
+  const [senderFont, setSenderFont] = useState(getInitialValue('senderFont', fontOptions[0].value));
   const [senderFontSize, setSenderFontSize] = useState(getInitialNumberValue('senderFontSize', 12));
-  
   // 메시지 내용에서 보내는 사람 분리
-  const messageParts = (order?.message?.content || "").split('\n---\n');
-  const defaultMessageContent = messageParts.length > 1 ? messageParts[0] : (order?.message?.content || "");
+  const messageParts = (order.message?.content || "").split('\n---\n');
+  const defaultMessageContent = messageParts.length > 1 ? messageParts[0] : (order.message?.content || "");
   const defaultSenderName = messageParts.length > 1 ? messageParts[1] : "";
   const [messageContent, setMessageContent] = useState(getInitialValue('messageContent', defaultMessageContent));
   const [senderName, setSenderName] = useState(getInitialValue('senderName', defaultSenderName));
   const [isEditing, setIsEditing] = useState(false);
   const selectedLabel = labelTypes.find(lt => lt.value === labelType) || labelTypes[0];
-  
   const handleFormSubmit = () => {
-    if (!order) return;
-    
-    const params = new URLSearchParams({
-      orderId: order.id,
-      labelType,
-      start: String(startPosition),
-      messageFont,
-      messageFontSize: String(messageFontSize),
-      senderFont,
-      senderFontSize: String(senderFontSize),
-      messageContent,
-      senderName,
-      positions: selectedPositions.join(','),
+    onSubmit({
+        orderId: order.id,
+        labelType,
+        startPosition,
+        messageFont,
+        messageFontSize,
+        senderFont,
+        senderFontSize,
+        messageContent,
+        senderName,
+        selectedPositions,
     });
-    router.push(`/dashboard/orders/print-message?${params.toString()}`);
-    onOpenChange(false);
   };
-  
   const messagePreviewStyle: React.CSSProperties = {
     fontFamily: messageFont,
     fontSize: `${messageFontSize}pt`,
@@ -109,13 +106,8 @@ export function MessagePrintDialog({ open, onOpenChange, orders }: MessagePrintD
     fontFamily: senderFont,
     fontSize: `${senderFontSize}pt`,
   };
-  
-  if (!order) {
-    return null;
-  }
-  
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>메시지 인쇄 옵션</DialogTitle>
@@ -130,43 +122,43 @@ export function MessagePrintDialog({ open, onOpenChange, orders }: MessagePrintD
             <div className="border rounded-lg p-4 bg-muted/50">
               <div className="flex justify-between items-center mb-3">
                 <Label className="text-sm font-medium">메시지 편집</Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setIsEditing(!isEditing)}
-                  aria-label={isEditing ? "미리보기 모드로 전환" : "편집 모드로 전환"}
-                >
-                  <Edit3 className="mr-2 h-4 w-4" />
-                  {isEditing ? "미리보기" : "편집"}
-                </Button>
+                                 <Button
+                   type="button"
+                   variant="outline"
+                   size="sm"
+                   onClick={() => setIsEditing(!isEditing)}
+                   aria-label={isEditing ? "미리보기 모드로 전환" : "편집 모드로 전환"}
+                 >
+                   <Edit3 className="mr-2 h-4 w-4" />
+                   {isEditing ? "미리보기" : "편집"}
+                 </Button>
               </div>
               {isEditing ? (
                 <div className="space-y-3">
                   <div>
                     <Label htmlFor="message-content">메시지 내용</Label>
-                    <Textarea
-                      id="message-content"
-                      name="message-content"
-                      value={messageContent}
-                      onChange={(e) => setMessageContent(e.target.value)}
-                      placeholder="메시지 내용을 입력하세요"
-                      className="mt-1"
-                      rows={4}
-                      autoComplete="off"
-                    />
+                                         <Textarea
+                       id="message-content"
+                       name="message-content"
+                       value={messageContent}
+                       onChange={(e) => setMessageContent(e.target.value)}
+                       placeholder="메시지 내용을 입력하세요"
+                       className="mt-1"
+                       rows={4}
+                       autoComplete="off"
+                     />
                   </div>
                   <div>
                     <Label htmlFor="sender-name">보내는 사람</Label>
-                    <Input
-                      id="sender-name"
-                      name="sender-name"
-                      value={senderName}
-                      onChange={(e) => setSenderName(e.target.value)}
-                      placeholder="보내는 사람 이름 (예: - 홍길동 -)"
-                      className="mt-1"
-                      autoComplete="off"
-                    />
+                                                               <Input
+                        id="sender-name"
+                        name="sender-name"
+                        value={senderName}
+                        onChange={(e) => setSenderName(e.target.value)}
+                        placeholder="보내는 사람 이름 (예: - 홍길동 -)"
+                        className="mt-1"
+                        autoComplete="off"
+                      />
                   </div>
                 </div>
               ) : (

@@ -23,11 +23,12 @@ import {
   Home
 } from "lucide-react";
 interface OrderDetailDialogProps {
-  isOpen: boolean;
+  open: boolean;
   onOpenChange: (open: boolean) => void;
   order: Order | null;
+  onStatusUpdate?: (orderId: string, newStatus: Order['status']) => void;
 }
-export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDialogProps) {
+export function OrderDetailDialog({ open, onOpenChange, order, onStatusUpdate }: OrderDetailDialogProps) {
   if (!order) return null;
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -74,7 +75,7 @@ export function OrderDetailDialog({ isOpen, onOpenChange, order }: OrderDetailDi
     }
   };
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

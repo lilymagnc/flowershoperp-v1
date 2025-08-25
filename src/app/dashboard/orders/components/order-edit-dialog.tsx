@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 
 interface OrderEditDialogProps {
-  isOpen: boolean;
+  open: boolean;
   onOpenChange: (open: boolean) => void;
   order: Order | null;
 }
@@ -46,7 +46,7 @@ interface OrderItem {
   price: number;
 }
 
-export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialogProps) {
+export function OrderEditDialog({ open, onOpenChange, order }: OrderEditDialogProps) {
   const { toast } = useToast();
   const { updateOrder } = useOrders();
   const [isLoading, setIsLoading] = useState(false);
@@ -303,7 +303,7 @@ export function OrderEditDialog({ isOpen, onOpenChange, order }: OrderEditDialog
 
 
   return (
-    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">

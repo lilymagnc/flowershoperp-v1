@@ -16,6 +16,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from '@/hooks/use-auth';
 import { Album, CreateAlbumData } from '@/types/album';
 import { FirebaseStorageService } from '@/lib/firebase-storage';
+import { createGooglePhotosAlbum, deleteGooglePhotosAlbum } from '@/lib/google-photos-service';
 export const useAlbums = () => {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,6 +51,22 @@ export const useAlbums = () => {
   const createAlbum = async (albumData: CreateAlbumData): Promise<string> => {
     if (!user) throw new Error('로그인이 필요합니다.');
     try {
+      // Google Photos 앨범 생성 시도
+      let googlePhotosAlbumId = '';
+      let googlePhotosShareUrl = '';
+      
+      try {
+        const googlePhotosResult = await createGooglePhotosAlbum(
+          albumData.title, 
+          albumData.description
+        );
+        googlePhotosAlbumId = googlePhotosResult.albumId;
+        googlePhotosShareUrl = googlePhotosResult.shareableUrl;
+      } catch (googleError) {
+        console.warn('Google Photos album creation failed, continuing with Firebase only:', googleError);
+        // Google Photos 앨범 생성 실패는 무시하고 계속 진행
+      }
+      
       const albumsRef = collection(db, 'albums');
       const docRef = await addDoc(albumsRef, {
         ...albumData,
@@ -57,7 +74,9 @@ export const useAlbums = () => {
         isPublic: albumData.isPublic ?? true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-        createdBy: user.uid
+        createdBy: user.uid,
+        googlePhotosAlbumId,
+        googlePhotosShareUrl
       });
       return docRef.id;
     } catch (error) {
@@ -81,13 +100,30 @@ export const useAlbums = () => {
   const deleteAlbum = async (albumId: string): Promise<void> => {
     if (!user) throw new Error('로그인이 필요합니다.');
     try {
-      // 1. 앨범의 모든 사진 삭제 (Firestore + Storage)
+      // 앨범 정보 가져오기 (Google Photos 앨범 ID 확인용)
+      const albumRef = doc(db, 'albums', albumId);
+      const albumDoc = await getDocs(query(collection(db, 'albums'), where('__name__', '==', albumId)));
+      const album = albumDoc.docs[0]?.data() as Album;
+      
+      // 1. 앨범의 모든 사진 삭제 (Firestore + Storage + Google Photos)
       const photosRef = collection(db, 'albums', albumId, 'photos');
       const photosSnapshot = await getDocs(photosRef);
       const deletePromises = photosSnapshot.docs.map(async (photoDoc) => {
+        const photoData = photoDoc.data();
+        
         // Firestore에서 사진 문서 삭제
         await deleteDoc(photoDoc.ref);
-        // Storage에서 사진 파일 삭제 (404 에러는 무시)
+        
+        // Google Photos에서 삭제 (mediaItemId가 있는 경우)
+        if (photoData.mediaItemId) {
+          try {
+            await deleteFromGooglePhotos(photoData.mediaItemId);
+          } catch (googleError) {
+            console.warn('Google Photos deletion failed:', googleError);
+          }
+        }
+        
+        // Firebase Storage에서 사진 파일 삭제 (404 에러는 무시)
         try {
           await FirebaseStorageService.deletePhoto(albumId, photoDoc.id);
         } catch (storageError: any) {
@@ -98,7 +134,17 @@ export const useAlbums = () => {
         }
       });
       await Promise.all(deletePromises);
-      // 2. Storage에서 앨범 폴더 삭제 (404 에러는 무시)
+      
+      // 2. Google Photos 앨범 삭제 (앨범 ID가 있는 경우)
+      if (album?.googlePhotosAlbumId) {
+        try {
+          await deleteGooglePhotosAlbum(album.googlePhotosAlbumId);
+        } catch (googleError) {
+          console.warn('Google Photos album deletion failed:', googleError);
+        }
+      }
+      
+      // 3. Firebase Storage에서 앨범 폴더 삭제 (404 에러는 무시)
       try {
         await FirebaseStorageService.deleteAlbum(albumId);
       } catch (storageError: any) {
@@ -107,8 +153,8 @@ export const useAlbums = () => {
           console.error('Storage 앨범 폴더 삭제 실패:', storageError);
         }
       }
-      // 3. 앨범 문서 삭제
-      const albumRef = doc(db, 'albums', albumId);
+      
+      // 4. 앨범 문서 삭제
       await deleteDoc(albumRef);
     } catch (error) {
       console.error('앨범 삭제 실패:', error);

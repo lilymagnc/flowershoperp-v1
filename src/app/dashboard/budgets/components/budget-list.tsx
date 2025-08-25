@@ -28,14 +28,18 @@ import {
   Trash2,
   RefreshCw,
   Calendar,
-  Building,
   Target,
   AlertTriangle,
   CheckCircle,
   TrendingUp,
   TrendingDown,
   Pause,
-  Play
+  Play,
+  Flower,
+  Package,
+  Megaphone,
+  Users,
+  Settings
 } from 'lucide-react';
 import { useBudgets } from '@/hooks/use-budgets';
 import { 
@@ -45,36 +49,47 @@ import {
   calculateBudgetUsage,
   getBudgetStatus 
 } from '@/types/expense';
+import { BudgetDetailDialog } from './budget-detail-dialog';
+
+// 꽃집 특화 카테고리 매핑
+const FLOWER_SHOP_CATEGORIES = {
+  'flowers': { label: '꽃 구매', icon: Flower, color: 'text-pink-600' },
+  'packaging': { label: '포장재/소모품', icon: Package, color: 'text-blue-600' },
+  'marketing': { label: '마케팅/홍보', icon: Megaphone, color: 'text-purple-600' },
+  'operations': { label: '운영비', icon: Settings, color: 'text-gray-600' },
+  'labor': { label: '인건비', icon: Users, color: 'text-green-600' },
+  'other': { label: '기타', icon: Target, color: 'text-orange-600' }
+};
+
 interface BudgetListProps {
   budgets: Budget[];
-  loading: boolean;
-  onRefresh: () => void;
+  onEdit?: (budget: Budget) => void;
 }
-export function BudgetList({ budgets, loading, onRefresh }: BudgetListProps) {
+
+export function BudgetList({ budgets, onEdit }: BudgetListProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState<ExpenseCategory | 'all'>('all');
-  const [yearFilter, setYearFilter] = useState<string>('all');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
-  const { toggleBudgetStatus } = useBudgets();
+  const [selectedBudget, setSelectedBudget] = useState<Budget | null>(null);
+  const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const { toggleBudgetStatus, deleteBudget } = useBudgets();
+
   // 필터링된 예산 목록
   const filteredBudgets = budgets.filter(budget => {
     const searchMatch = !searchTerm || 
-      String(budget.name ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(budget.branchName ?? '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(budget.departmentName ?? '').toLowerCase().includes(searchTerm.toLowerCase());
+      String(budget.name ?? '').toLowerCase().includes(searchTerm.toLowerCase());
     const categoryMatch = categoryFilter === 'all' || budget.category === categoryFilter;
-    const yearMatch = yearFilter === 'all' || budget.fiscalYear.toString() === yearFilter;
     const statusMatch = statusFilter === 'all' || 
       (statusFilter === 'active' && budget.isActive) ||
       (statusFilter === 'inactive' && !budget.isActive);
-    return searchMatch && categoryMatch && yearMatch && statusMatch;
+    return searchMatch && categoryMatch && statusMatch;
   });
-  // 고유 연도 목록 추출
-  const uniqueYears = Array.from(new Set(budgets.map(b => b.fiscalYear.toString())));
+
   // 예산 사용률 계산
   const getBudgetUsage = (budget: Budget) => {
     return budget.allocatedAmount > 0 ? (budget.usedAmount / budget.allocatedAmount) * 100 : 0;
   };
+
   // 상태별 색상 반환
   const getStatusColor = (budget: Budget) => {
     if (!budget.isActive) return 'text-gray-500';
@@ -83,6 +98,7 @@ export function BudgetList({ budgets, loading, onRefresh }: BudgetListProps) {
     if (usage >= 80) return 'text-yellow-600';
     return 'text-green-600';
   };
+
   // 상태별 아이콘 반환
   const getStatusIcon = (budget: Budget) => {
     if (!budget.isActive) return <Pause className="h-4 w-4 text-gray-500" />;
@@ -91,6 +107,7 @@ export function BudgetList({ budgets, loading, onRefresh }: BudgetListProps) {
     if (usage >= 80) return <TrendingUp className="h-4 w-4 text-yellow-500" />;
     return <CheckCircle className="h-4 w-4 text-green-500" />;
   };
+
   // 날짜 포맷팅
   const formatDate = (timestamp: any) => {
     if (!timestamp) return '-';
@@ -101,215 +118,190 @@ export function BudgetList({ budgets, loading, onRefresh }: BudgetListProps) {
       day: 'numeric'
     });
   };
-  // 통화 포맷팅
+
+  // 금액 포맷팅
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ko-KR', {
       style: 'currency',
-      currency: 'KRW'
+      currency: 'KRW',
+      notation: 'compact'
     }).format(amount);
   };
-  // 예산 활성화/비활성화 토글
-  const handleToggleStatus = async (budgetId: string, currentStatus: boolean) => {
-    await toggleBudgetStatus(budgetId, !currentStatus);
+
+  // 카테고리 아이콘 및 라벨 가져오기
+  const getCategoryInfo = (category: string) => {
+    return FLOWER_SHOP_CATEGORIES[category as keyof typeof FLOWER_SHOP_CATEGORIES] || 
+           { label: category, icon: Target, color: 'text-gray-600' };
   };
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">로딩 중...</span>
-      </div>
-    );
-  }
+
+  const handleToggleStatus = async (budgetId: string, currentStatus: boolean) => {
+    try {
+      await toggleBudgetStatus(budgetId, !currentStatus);
+    } catch (error) {
+      console.error('Failed to toggle budget status:', error);
+    }
+  };
+
+  const handleDeleteBudget = async (budgetId: string) => {
+    if (confirm('정말로 이 예산을 삭제하시겠습니까?')) {
+      try {
+        await deleteBudget(budgetId);
+      } catch (error) {
+        console.error('Failed to delete budget:', error);
+      }
+    }
+  };
+
+  const handleViewDetail = (budget: Budget) => {
+    setSelectedBudget(budget);
+    setShowDetailDialog(true);
+  };
+
+  const handleEditBudget = (budget: Budget) => {
+    if (onEdit) {
+      onEdit(budget);
+    }
+  };
+
+
+
   return (
-    <div className="space-y-4">
-      {/* 필터 및 검색 */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="flex-1">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="예산명, 지점, 부서로 검색..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Select value={categoryFilter} onValueChange={(value) => setCategoryFilter(value as ExpenseCategory | 'all')}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="카테고리" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체</SelectItem>
-              {Object.entries(EXPENSE_CATEGORY_LABELS).map(([key, label]) => (
-                <SelectItem key={key} value={key}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={yearFilter} onValueChange={setYearFilter}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="연도" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체 연도</SelectItem>
-              {uniqueYears.map((year) => (
-                <SelectItem key={year} value={year}>
-                  {year}년
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as 'all' | 'active' | 'inactive')}>
-            <SelectTrigger className="w-32">
-              <SelectValue placeholder="상태" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체</SelectItem>
-              <SelectItem value="active">활성</SelectItem>
-              <SelectItem value="inactive">비활성</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" onClick={onRefresh}>
-            <RefreshCw className="h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-      {/* 예산 목록 테이블 */}
+    <>
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>예산 목록 ({filteredBudgets.length}개)</span>
-            <div className="text-sm text-muted-foreground">
-              총 할당 예산: {formatCurrency(
-                filteredBudgets.reduce((total, budget) => total + budget.allocatedAmount, 0)
-              )}
-            </div>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5" />
+            예산 목록
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredBudgets.length === 0 ? (
-            <div className="text-center py-8">
-              <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground">조건에 맞는 예산이 없습니다.</p>
+          {/* 필터 및 검색 */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-6">
+            <div className="flex-1">
+              <Input
+                placeholder="예산명으로 검색..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="max-w-sm"
+              />
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
+            <div className="flex gap-2">
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="카테고리" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체 카테고리</SelectItem>
+                  {Object.entries(FLOWER_SHOP_CATEGORIES).map(([key, category]) => (
+                    <SelectItem key={key} value={key}>
+                      <div className="flex items-center gap-2">
+                        <category.icon className="h-4 w-4" />
+                        {category.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={statusFilter} onValueChange={(value: any) => setStatusFilter(value)}>
+                <SelectTrigger className="w-[120px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체</SelectItem>
+                  <SelectItem value="active">활성</SelectItem>
+                  <SelectItem value="inactive">비활성</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* 예산 목록 테이블 */}
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>예산명</TableHead>
+                  <TableHead>카테고리</TableHead>
+                  <TableHead>예산 금액</TableHead>
+                  <TableHead>사용률</TableHead>
+                  <TableHead>상태</TableHead>
+                  <TableHead>기간</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredBudgets.length === 0 ? (
                   <TableRow>
-                    <TableHead>예산명</TableHead>
-                    <TableHead>카테고리</TableHead>
-                    <TableHead>기간</TableHead>
-                    <TableHead>조직</TableHead>
-                    <TableHead>할당 금액</TableHead>
-                    <TableHead>사용률</TableHead>
-                    <TableHead>상태</TableHead>
-                    <TableHead>생성일</TableHead>
-                    <TableHead className="text-right">작업</TableHead>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      {searchTerm || categoryFilter !== 'all' || statusFilter !== 'all' 
+                        ? '검색 조건에 맞는 예산이 없습니다.' 
+                        : '등록된 예산이 없습니다.'}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredBudgets.map((budget) => {
+                ) : (
+                  filteredBudgets.map((budget) => {
                     const usage = getBudgetUsage(budget);
+                    const categoryInfo = getCategoryInfo(budget.category);
+                    const CategoryIcon = categoryInfo.icon;
+                    
                     return (
                       <TableRow key={budget.id}>
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            {getStatusIcon(budget)}
-                            <div>
-                              <p className="font-medium">{budget.name}</p>
-                              <p className="text-sm text-muted-foreground">
-                                {budget.fiscalMonth ? `${budget.fiscalMonth}월 예산` : '연간 예산'}
-                              </p>
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="outline">
-                            {EXPENSE_CATEGORY_LABELS[budget.category]}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Calendar className="h-4 w-4 text-muted-foreground" />
-                            <span>{budget.fiscalYear}년</span>
-                            {budget.fiscalMonth && (
-                              <span className="text-sm text-muted-foreground">
-                                {budget.fiscalMonth}월
-                              </span>
+                          <div>
+                            <div className="font-medium">{budget.name}</div>
+                            {budget.description && (
+                              <div className="text-sm text-muted-foreground">{budget.description}</div>
                             )}
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Building className="h-4 w-4 text-muted-foreground" />
-                            <div>
-                              <p className="text-sm">
-                                {budget.branchName || '전사'}
-                              </p>
-                              {budget.departmentName && (
-                                <p className="text-xs text-muted-foreground">
-                                  {budget.departmentName}
-                                </p>
-                              )}
+                            <CategoryIcon className={`h-4 w-4 ${categoryInfo.color}`} />
+                            <span className="text-sm">{categoryInfo.label}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div className="font-medium">{formatCurrency(budget.allocatedAmount)}</div>
+                            <div className="text-muted-foreground">
+                              사용: {formatCurrency(budget.usedAmount)}
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div>
-                            <p className="font-medium">
-                              {formatCurrency(budget.allocatedAmount)}
-                            </p>
-                            <p className="text-sm text-muted-foreground">
-                              사용: {formatCurrency(budget.usedAmount)}
-                            </p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className={`text-sm font-medium ${getStatusColor(budget)}`}>
-                                {usage.toFixed(1)}%
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-sm">
+                              <span>{usage.toFixed(1)}%</span>
+                              <span className="text-muted-foreground">
+                                {formatCurrency(budget.allocatedAmount - budget.usedAmount)} 남음
                               </span>
-                              {usage >= 100 && (
-                                <Badge variant="destructive" className="text-xs">
-                                  초과
-                                </Badge>
-                              )}
                             </div>
                             <Progress 
                               value={Math.min(usage, 100)} 
                               className="h-2"
                             />
-                            <p className="text-xs text-muted-foreground">
-                              잔여: {formatCurrency(budget.remainingAmount)}
-                            </p>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            {budget.isActive ? (
-                              <Badge variant="default" className="text-xs">
-                                <Play className="h-3 w-3 mr-1" />
-                                활성
-                              </Badge>
-                            ) : (
-                              <Badge variant="secondary" className="text-xs">
-                                <Pause className="h-3 w-3 mr-1" />
-                                비활성
-                              </Badge>
+                            {getStatusIcon(budget)}
+                            <Badge 
+                              variant={budget.isActive ? "default" : "secondary"}
+                              className={getStatusColor(budget)}
+                            >
+                              {budget.isActive ? '활성' : '비활성'}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <div>{budget.fiscalYear}년</div>
+                            {budget.fiscalMonth && (
+                              <div className="text-muted-foreground">{budget.fiscalMonth}월</div>
                             )}
                           </div>
                         </TableCell>
                         <TableCell>
-                          <div className="text-sm text-muted-foreground">
-                            {formatDate(budget.createdAt)}
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm">
@@ -317,15 +309,15 @@ export function BudgetList({ budgets, loading, onRefresh }: BudgetListProps) {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleViewDetail(budget)}>
                                 <Eye className="h-4 w-4 mr-2" />
-                                상세 보기
+                                상세보기
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEditBudget(budget)}>
                                 <Edit className="h-4 w-4 mr-2" />
                                 수정
                               </DropdownMenuItem>
-                              <DropdownMenuItem
+                              <DropdownMenuItem 
                                 onClick={() => handleToggleStatus(budget.id, budget.isActive)}
                               >
                                 {budget.isActive ? (
@@ -340,7 +332,10 @@ export function BudgetList({ budgets, loading, onRefresh }: BudgetListProps) {
                                   </>
                                 )}
                               </DropdownMenuItem>
-                              <DropdownMenuItem className="text-red-600">
+                              <DropdownMenuItem 
+                                onClick={() => handleDeleteBudget(budget.id)}
+                                className="text-red-600"
+                              >
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 삭제
                               </DropdownMenuItem>
@@ -349,64 +344,55 @@ export function BudgetList({ budgets, loading, onRefresh }: BudgetListProps) {
                         </TableCell>
                       </TableRow>
                     );
-                  })}
-                </TableBody>
-              </Table>
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+
+          {/* 요약 정보 */}
+          {filteredBudgets.length > 0 && (
+            <div className="mt-6 p-4 bg-muted/50 rounded-lg">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div>
+                  <div className="text-muted-foreground">총 예산</div>
+                  <div className="font-medium">
+                    {formatCurrency(filteredBudgets.reduce((sum, b) => sum + b.allocatedAmount, 0))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">총 사용</div>
+                  <div className="font-medium">
+                    {formatCurrency(filteredBudgets.reduce((sum, b) => sum + b.usedAmount, 0))}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">평균 사용률</div>
+                  <div className="font-medium">
+                    {(filteredBudgets.reduce((sum, b) => sum + getBudgetUsage(b), 0) / filteredBudgets.length).toFixed(1)}%
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">활성 예산</div>
+                  <div className="font-medium">
+                    {filteredBudgets.filter(b => b.isActive).length}개
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </CardContent>
       </Card>
-      {/* 요약 정보 */}
-      {filteredBudgets.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-green-600">
-                  {filteredBudgets.filter(b => {
-                    const usage = getBudgetUsage(b);
-                    return usage < 80;
-                  }).length}
-                </p>
-                <p className="text-sm text-muted-foreground">정상 범위</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-yellow-600">
-                  {filteredBudgets.filter(b => {
-                    const usage = getBudgetUsage(b);
-                    return usage >= 80 && usage < 100;
-                  }).length}
-                </p>
-                <p className="text-sm text-muted-foreground">주의 필요</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-red-600">
-                  {filteredBudgets.filter(b => getBudgetUsage(b) >= 100).length}
-                </p>
-                <p className="text-sm text-muted-foreground">예산 초과</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-center">
-                <p className="text-2xl font-bold text-gray-600">
-                  {filteredBudgets.filter(b => !b.isActive).length}
-                </p>
-                <p className="text-sm text-muted-foreground">비활성</p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
+
+      {/* 예산 상세보기 다이얼로그 */}
+      <BudgetDetailDialog
+        budget={selectedBudget}
+        open={showDetailDialog}
+        onClose={() => {
+          setShowDetailDialog(false);
+          setSelectedBudget(null);
+        }}
+      />
+    </>
   );
 }

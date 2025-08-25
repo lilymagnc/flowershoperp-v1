@@ -3,49 +3,60 @@ import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  LineChart,
-  Line,
-  Area,
-  AreaChart,
-  ComposedChart
-} from 'recharts';
+import { Progress } from '@/components/ui/progress';
 import { 
   Target, 
   TrendingUp, 
   TrendingDown,
   DollarSign, 
   Calendar,
-  Building,
   Activity,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Flower,
+  Package,
+  Megaphone,
+  Users,
+  Settings,
+  BarChart3,
+  PieChart
 } from 'lucide-react';
-import { useBudgets } from '@/hooks/use-budgets';
-import type { 
-  Budget,
-  ExpenseCategory,
-  EXPENSE_CATEGORY_LABELS 
-} from '@/types/expense';
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FFC658', '#FF7C7C'];
-export function BudgetAnalytics() {
+import type { Budget, Expense } from '@/types/expense';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+
+// 꽃집 특화 카테고리 아이콘
+const CATEGORY_ICONS = {
+  'flowers': Flower,
+  'packaging': Package,
+  'marketing': Megaphone,
+  'operations': Settings,
+  'labor': Users,
+  'other': Target
+};
+
+const CATEGORY_LABELS = {
+  'flowers': '꽃 구매',
+  'packaging': '포장재/소모품',
+  'marketing': '마케팅/홍보',
+  'operations': '운영비',
+  'labor': '인건비',
+  'other': '기타'
+};
+
+interface BudgetAnalyticsProps {
+  budgets: Budget[];
+  stats: any;
+  expenses?: Expense[];
+}
+
+export function BudgetAnalytics({ budgets, stats }: BudgetAnalyticsProps) {
   const [timeRange, setTimeRange] = useState<'current' | 'quarter' | 'year'>('current');
-  const [viewType, setViewType] = useState<'category' | 'branch' | 'department'>('category');
-  const { budgets, loading } = useBudgets();
+
   // 시간 범위별 데이터 필터링
   const filteredBudgets = useMemo(() => {
     const currentYear = new Date().getFullYear();
     const currentMonth = new Date().getMonth() + 1;
+    
     return budgets.filter(budget => {
       switch (timeRange) {
         case 'current':
@@ -61,127 +72,55 @@ export function BudgetAnalytics() {
       }
     });
   }, [budgets, timeRange]);
-  // 기본 통계 계산
-  const basicStats = useMemo(() => {
-    const totalBudgets = filteredBudgets.length;
-    const activeBudgets = filteredBudgets.filter(b => b.isActive).length;
-    const totalAllocated = filteredBudgets.reduce((sum, b) => sum + b.allocatedAmount, 0);
-    const totalUsed = filteredBudgets.reduce((sum, b) => sum + b.usedAmount, 0);
-    const totalRemaining = filteredBudgets.reduce((sum, b) => sum + b.remainingAmount, 0);
-    const averageUsage = totalAllocated > 0 ? (totalUsed / totalAllocated) * 100 : 0;
-    const overBudgetCount = filteredBudgets.filter(b => b.usedAmount > b.allocatedAmount).length;
-    const underUtilizedCount = filteredBudgets.filter(b => {
-      const usage = b.allocatedAmount > 0 ? (b.usedAmount / b.allocatedAmount) * 100 : 0;
-      return usage < 50;
-    }).length;
-    return {
-      totalBudgets,
-      activeBudgets,
-      totalAllocated,
-      totalUsed,
-      totalRemaining,
-      averageUsage,
-      overBudgetCount,
-      underUtilizedCount
-    };
-  }, [filteredBudgets]);
+
   // 카테고리별 분석
   const categoryAnalysis = useMemo(() => {
     const categoryData = filteredBudgets.reduce((acc, budget) => {
-      if (!acc[budget.category]) {
-        acc[budget.category] = {
-          category: budget.category,
+      const category = budget.category as keyof typeof CATEGORY_LABELS;
+      if (!acc[category]) {
+        acc[category] = {
+          category,
+          label: CATEGORY_LABELS[category] || category,
           allocated: 0,
           used: 0,
           remaining: 0,
           count: 0
         };
       }
-      acc[budget.category].allocated += budget.allocatedAmount;
-      acc[budget.category].used += budget.usedAmount;
-      acc[budget.category].remaining += budget.remainingAmount;
-      acc[budget.category].count += 1;
-      return acc;
-    }, {} as Record<ExpenseCategory, any>);
-    return Object.values(categoryData)
-      .map((data: any) => ({
-        ...data,
-        name: EXPENSE_CATEGORY_LABELS[data.category as ExpenseCategory],
-        usage: data.allocated > 0 ? (data.used / data.allocated) * 100 : 0,
-        efficiency: data.allocated > 0 ? Math.min((data.used / data.allocated) * 100, 100) : 0
-      }))
-      .sort((a: any, b: any) => b.allocated - a.allocated);
-  }, [filteredBudgets]);
-  // 지점별 분석
-  const branchAnalysis = useMemo(() => {
-    const branchData = filteredBudgets.reduce((acc, budget) => {
-      const branch = budget.branchName || '전사';
-      if (!acc[branch]) {
-        acc[branch] = {
-          name: branch,
-          allocated: 0,
-          used: 0,
-          remaining: 0,
-          count: 0
-        };
-      }
-      acc[branch].allocated += budget.allocatedAmount;
-      acc[branch].used += budget.usedAmount;
-      acc[branch].remaining += budget.remainingAmount;
-      acc[branch].count += 1;
+      acc[category].allocated += budget.allocatedAmount;
+      acc[category].used += budget.usedAmount;
+      acc[category].remaining += (budget.allocatedAmount - budget.usedAmount);
+      acc[category].count += 1;
       return acc;
     }, {} as Record<string, any>);
-    return Object.values(branchData)
-      .map((data: any) => ({
-        ...data,
-        usage: data.allocated > 0 ? (data.used / data.allocated) * 100 : 0
-      }))
-      .sort((a: any, b: any) => b.allocated - a.allocated);
+
+    return Object.values(categoryData).map(item => ({
+      ...item,
+      usage: item.allocated > 0 ? (item.used / item.allocated) * 100 : 0
+    }));
   }, [filteredBudgets]);
-  // 월별 트렌드 (월간 예산만)
+
+  // 월별 추이 분석
   const monthlyTrend = useMemo(() => {
-    const monthlyBudgets = filteredBudgets.filter(b => b.fiscalMonth);
-    const monthlyData = monthlyBudgets.reduce((acc, budget) => {
-      const month = budget.fiscalMonth!;
-      if (!acc[month]) {
-        acc[month] = {
-          month: `${month}월`,
-          allocated: 0,
-          used: 0,
-          count: 0,
-          usage: 0
-        };
-      }
-      acc[month].allocated += budget.allocatedAmount;
-      acc[month].used += budget.usedAmount;
-      acc[month].count += 1;
-      return acc;
-    }, {} as Record<number, any>);
-    return Object.values(monthlyData)
-      .map((data: any) => ({
-        ...data,
-        usage: data.allocated > 0 ? (data.used / data.allocated) * 100 : 0
-      }))
-      .sort((a: any, b: any) => parseInt(a.month) - parseInt(b.month));
+    const monthlyData = Array.from({ length: 12 }, (_, i) => ({
+      month: i + 1,
+      allocated: 0,
+      used: 0,
+      remaining: 0
+    }));
+
+         filteredBudgets.forEach(budget => {
+       if (budget.fiscalMonth) {
+         const monthIndex = budget.fiscalMonth - 1;
+         monthlyData[monthIndex].allocated += budget.allocatedAmount;
+         monthlyData[monthIndex].used += budget.usedAmount;
+         monthlyData[monthIndex].remaining += (budget.allocatedAmount - budget.usedAmount);
+       }
+     });
+
+    return monthlyData;
   }, [filteredBudgets]);
-  // 예산 효율성 분석
-  const efficiencyAnalysis = useMemo(() => {
-    return filteredBudgets.map(budget => {
-      const usage = budget.allocatedAmount > 0 ? (budget.usedAmount / budget.allocatedAmount) * 100 : 0;
-      let efficiency: 'excellent' | 'good' | 'fair' | 'poor';
-      if (usage >= 80 && usage <= 100) efficiency = 'excellent';
-      else if (usage >= 60 && usage < 120) efficiency = 'good';
-      else if (usage >= 40 && usage < 140) efficiency = 'fair';
-      else efficiency = 'poor';
-      return {
-        ...budget,
-        usage,
-        efficiency,
-        name: budget.name,
-        category: EXPENSE_CATEGORY_LABELS[budget.category]
-      };
-    }).sort((a, b) => b.usage - a.usage);
-  }, [filteredBudgets]);
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('ko-KR', {
       style: 'currency',
@@ -189,270 +128,267 @@ export function BudgetAnalytics() {
       notation: 'compact'
     }).format(amount);
   };
-  const getEfficiencyColor = (efficiency: string) => {
-    switch (efficiency) {
-      case 'excellent': return 'text-green-600';
-      case 'good': return 'text-blue-600';
-      case 'fair': return 'text-yellow-600';
-      case 'poor': return 'text-red-600';
-      default: return 'text-gray-600';
-    }
+
+  const getUsageColor = (usage: number) => {
+    if (usage >= 100) return 'text-red-600';
+    if (usage >= 80) return 'text-yellow-600';
+    return 'text-green-600';
   };
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Activity className="h-8 w-8 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-muted-foreground">분석 데이터 로딩 중...</span>
-      </div>
-    );
-  }
+
+  const getUsageBgColor = (usage: number) => {
+    if (usage >= 100) return 'bg-red-600';
+    if (usage >= 80) return 'bg-yellow-600';
+    return 'bg-green-600';
+  };
+
   return (
     <div className="space-y-6">
-      {/* 헤더 */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold">예산 분석</h2>
-          <p className="text-muted-foreground">예산 사용 패턴과 효율성을 분석합니다</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={timeRange} onValueChange={(value: any) => setTimeRange(value)}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="current">현재</SelectItem>
-              <SelectItem value="quarter">분기</SelectItem>
-              <SelectItem value="year">연간</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={viewType} onValueChange={(value: any) => setViewType(value)}>
-            <SelectTrigger className="w-32">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="category">카테고리별</SelectItem>
-              <SelectItem value="branch">지점별</SelectItem>
-              <SelectItem value="department">부서별</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      {/* 주요 지표 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 필터 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            예산 분석
+          </CardTitle>
+          <CardDescription>
+            예산 사용 현황과 추이를 분석합니다
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-4">
+            <Select value={timeRange} onValueChange={(value: any) => setTimeRange(value)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="current">이번 달</SelectItem>
+                <SelectItem value="quarter">이번 분기</SelectItem>
+                <SelectItem value="year">이번 년도</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 요약 통계 */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-blue-100 rounded-lg">
-                <Target className="h-6 w-6 text-blue-600" />
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-100 rounded-lg">
+                <Target className="h-5 w-5 text-blue-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">평균 사용률</p>
-                <p className="text-2xl font-bold">{basicStats.averageUsage.toFixed(1)}%</p>
+                <p className="text-sm text-muted-foreground">총 예산</p>
+                <p className="text-xl font-bold">{formatCurrency(stats.totalAllocated)}</p>
                 <p className="text-xs text-blue-600">
-                  {basicStats.activeBudgets}개 활성 예산
+                  {filteredBudgets.length}개 예산
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-green-100 rounded-lg">
-                <DollarSign className="h-6 w-6 text-green-600" />
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-green-100 rounded-lg">
+                <TrendingUp className="h-5 w-5 text-green-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">총 할당 예산</p>
-                <p className="text-2xl font-bold">{formatCurrency(basicStats.totalAllocated)}</p>
-                <p className="text-xs text-green-600">
-                  사용: {formatCurrency(basicStats.totalUsed)}
+                <p className="text-sm text-muted-foreground">사용 금액</p>
+                <p className="text-xl font-bold">{formatCurrency(stats.totalUsed)}</p>
+                <p className={`text-xs ${getUsageColor(stats.averageUsage)}`}>
+                  {stats.averageUsage.toFixed(1)}% 사용
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-red-100 rounded-lg">
-                <AlertTriangle className="h-6 w-6 text-red-600" />
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-purple-100 rounded-lg">
+                <DollarSign className="h-5 w-5 text-purple-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">예산 초과</p>
-                <p className="text-2xl font-bold">{basicStats.overBudgetCount}</p>
-                <p className="text-xs text-red-600">
-                  주의 필요
+                <p className="text-sm text-muted-foreground">남은 예산</p>
+                <p className="text-xl font-bold">{formatCurrency(stats.totalRemaining)}</p>
+                <p className="text-xs text-purple-600">
+                  안전 마진
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
+
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-yellow-100 rounded-lg">
-                <TrendingDown className="h-6 w-6 text-yellow-600" />
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-orange-100 rounded-lg">
+                <Activity className="h-5 w-5 text-orange-600" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">저활용</p>
-                <p className="text-2xl font-bold">{basicStats.underUtilizedCount}</p>
-                <p className="text-xs text-yellow-600">
-                  50% 미만 사용
+                <p className="text-sm text-muted-foreground">활성 예산</p>
+                <p className="text-xl font-bold">{filteredBudgets.filter(b => b.isActive).length}</p>
+                <p className="text-xs text-orange-600">
+                  관리 중
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
       </div>
-      {/* 차트 섹션 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 카테고리별 예산 분포 */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Target className="h-5 w-5" />
-              {viewType === 'category' ? '카테고리별' : viewType === 'branch' ? '지점별' : '부서별'} 예산 분포
-            </CardTitle>
-            <CardDescription>할당 예산과 사용 현황</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={viewType === 'category' ? categoryAnalysis : branchAnalysis}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="name" />
-                  <YAxis />
-                  <Tooltip 
-                    formatter={(value, name) => [
-                      formatCurrency(value as number),
-                      name === 'allocated' ? '할당 예산' : '사용 금액'
-                    ]}
-                  />
-                  <Bar dataKey="allocated" fill="#8884d8" name="allocated" />
-                  <Bar dataKey="used" fill="#82ca9d" name="used" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-        {/* 예산 사용률 분포 */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
-              예산 사용률 분포
-            </CardTitle>
-            <CardDescription>카테고리별 사용률 현황</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categoryAnalysis}
-                    cx="50%"
-                    cy="50%"
-                    labelLine={false}
-                    label={({ name, usage }) => `${name} ${usage.toFixed(1)}%`}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="used"
-                  >
-                    {categoryAnalysis.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value) => formatCurrency(value as number)} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-      {/* 월별 트렌드 */}
-      {monthlyTrend.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5" />
-              월별 예산 트렌드
-            </CardTitle>
-            <CardDescription>월간 예산의 할당과 사용 추이</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={monthlyTrend}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis yAxisId="left" />
-                  <YAxis yAxisId="right" orientation="right" />
-                  <Tooltip 
-                    formatter={(value, name) => [
-                      name === 'usage' ? `${(value as number).toFixed(1)}%` : formatCurrency(value as number),
-                      name === 'allocated' ? '할당 예산' : name === 'used' ? '사용 금액' : '사용률'
-                    ]}
-                  />
-                  <Bar yAxisId="left" dataKey="allocated" fill="#8884d8" />
-                  <Bar yAxisId="left" dataKey="used" fill="#82ca9d" />
-                  <Line yAxisId="right" type="monotone" dataKey="usage" stroke="#ff7300" strokeWidth={2} />
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-      {/* 예산 효율성 분석 */}
+
+      {/* 카테고리별 분석 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <PieChart className="h-5 w-5" />
+            카테고리별 예산 현황
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+                         {categoryAnalysis.map((item) => {
+               const CategoryIcon = CATEGORY_ICONS[item.category as keyof typeof CATEGORY_ICONS] || Target;
+               
+               return (
+                 <div key={item.category} className="border rounded-lg p-4">
+                   <div className="flex items-center justify-between mb-3">
+                     <div className="flex items-center gap-2">
+                       <CategoryIcon className="h-5 w-5" />
+                       <span className="font-medium">{item.label}</span>
+                       <Badge variant="outline" className="text-xs">
+                         {item.count}개
+                       </Badge>
+                     </div>
+                    <div className="text-right">
+                      <div className="font-medium">{formatCurrency(item.allocated)}</div>
+                      <div className="text-sm text-muted-foreground">
+                        사용: {formatCurrency(item.used)}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
+                      <span>사용률</span>
+                      <span className={getUsageColor(item.usage)}>
+                        {item.usage.toFixed(1)}%
+                      </span>
+                    </div>
+                    <Progress 
+                      value={Math.min(item.usage, 100)} 
+                      className="h-2"
+                    />
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>할당: {formatCurrency(item.allocated)}</span>
+                      <span>남음: {formatCurrency(item.remaining)}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 월별 추이 */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            월별 예산 추이
+          </CardTitle>
+          <CardDescription>
+            월간 예산의 할당 및 사용 현황
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {monthlyTrend.map((month) => {
+              const usage = month.allocated > 0 ? (month.used / month.allocated) * 100 : 0;
+              const monthName = `${month.month}월`;
+              
+              return (
+                <div key={month.month} className="flex items-center gap-4 p-3 border rounded-lg">
+                  <div className="w-16 text-sm font-medium">{monthName}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-muted-foreground">사용률</span>
+                      <span className={`text-sm font-medium ${getUsageColor(usage)}`}>
+                        {usage.toFixed(1)}%
+                      </span>
+                    </div>
+                    <Progress 
+                      value={Math.min(usage, 100)} 
+                      className="h-2"
+                    />
+                  </div>
+                  <div className="text-right text-sm">
+                    <div className="font-medium">{formatCurrency(month.allocated)}</div>
+                    <div className="text-muted-foreground">
+                      사용: {formatCurrency(month.used)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* 인사이트 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <CheckCircle className="h-5 w-5" />
-            예산 효율성 분석
+            예산 인사이트
           </CardTitle>
-          <CardDescription>각 예산의 사용 효율성 평가</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {efficiencyAnalysis.slice(0, 10).map((budget, index) => (
-              <div key={budget.id} className="flex items-center justify-between p-4 border rounded-lg">
-                <div className="flex items-center gap-4">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                    <span className="text-sm font-bold text-blue-600">{index + 1}</span>
-                  </div>
-                  <div>
-                    <p className="font-medium">{budget.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {budget.category} • {budget.branchName || '전사'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    <p className="font-medium">{formatCurrency(budget.allocatedAmount)}</p>
-                    <p className="text-sm text-muted-foreground">
-                      사용: {formatCurrency(budget.usedAmount)}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p className={`font-medium ${getEfficiencyColor(budget.efficiency)}`}>
-                      {budget.usage.toFixed(1)}%
-                    </p>
-                    <Badge 
-                      variant={
-                        budget.efficiency === 'excellent' ? 'default' :
-                        budget.efficiency === 'good' ? 'secondary' :
-                        budget.efficiency === 'fair' ? 'outline' : 'destructive'
-                      }
-                      className="text-xs"
-                    >
-                      {budget.efficiency === 'excellent' ? '우수' :
-                       budget.efficiency === 'good' ? '양호' :
-                       budget.efficiency === 'fair' ? '보통' : '개선필요'}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-            ))}
+            {stats.averageUsage >= 80 && (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>주의:</strong> 전체 예산 사용률이 {stats.averageUsage.toFixed(1)}%에 도달했습니다. 
+                  지출을 신중하게 관리하세요.
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {categoryAnalysis.some(item => item.usage >= 100) && (
+              <Alert>
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>예산 초과:</strong> 일부 카테고리에서 예산을 초과했습니다. 
+                  해당 카테고리의 지출을 중단하고 예산을 재검토하세요.
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {categoryAnalysis.some(item => item.usage < 30) && (
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>효율적 관리:</strong> 일부 카테고리에서 예산을 효율적으로 관리하고 있습니다. 
+                  남은 예산을 다른 우선순위에 재배치하는 것을 고려해보세요.
+                </AlertDescription>
+              </Alert>
+            )}
+            
+            {stats.totalRemaining > stats.totalAllocated * 0.3 && (
+              <Alert>
+                <CheckCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>건전한 재정:</strong> 충분한 예산 여유가 있습니다. 
+                  향후 계획에 대한 투자를 고려해보세요.
+                </AlertDescription>
+              </Alert>
+            )}
           </div>
         </CardContent>
       </Card>

@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/page-header';
 import { AlbumGrid } from './components/album-grid';
 import { CreateAlbumDialog } from './components/create-album-dialog';
 import { CategoryFilter } from './components/category-filter';
+import { ImportGooglePhotosDialog } from '@/components/import-google-photos-dialog';
 import { useAlbums } from '@/hooks/use-albums';
 import { AlbumCategory } from '@/types/album';
 import { useAuth } from '@/hooks/use-auth';
@@ -63,10 +64,16 @@ export default function SampleAlbumsPage() {
           selectedCategory={selectedCategory}
           onCategoryChange={setSelectedCategory}
         />
-        <Button onClick={() => setIsCreateDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          새 앨범
-        </Button>
+        <div className="flex gap-2">
+          <ImportGooglePhotosDialog onImportComplete={() => {
+            // 앨범 목록 새로고침
+            window.location.reload();
+          }} />
+          <Button onClick={() => setIsCreateDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            새 앨범
+          </Button>
+        </div>
       </div>
       {/* 앨범 그리드 */}
       <AlbumGrid
